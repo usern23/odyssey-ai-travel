@@ -76,8 +76,7 @@ class TripWorker(RabbitMQConsumer):
                     trip_profile['special_requirements'] = {}
             trip = Trip(
                 user_id=event.user_id,
-                name=f'Поездка в {
-                    event.destination}',
+                name=f'Поездка в {event.destination}',
                 destination=event.destination,
                 origin=event.origin,
                 start_date=start_date,
@@ -88,10 +87,7 @@ class TripWorker(RabbitMQConsumer):
             await session.commit()
             await session.refresh(trip)
             logger.info(
-                f'Created Trip {
-                    trip.id} for user {
-                    event.user_id}: {
-                    event.destination}, {start_date} - {end_date}')
+                f'Created Trip {trip.id} for user {event.user_id}: {event.destination}, {start_date} - {end_date}')
             await self._link_chat_to_trip(session, event.chat_id, trip.id)
 
     async def _link_chat_to_trip(
@@ -116,9 +112,7 @@ class TripWorker(RabbitMQConsumer):
                 trip = result.scalar_one_or_none()
             if not trip:
                 logger.warning(
-                    f'No trip found for plan generated event: user={
-                        event.user_id}, trip_id={
-                        event.trip_id}')
+                    f'No trip found for plan generated event: user={event.user_id}, trip_id={event.trip_id}')
                 return
             try:
                 plan_data = json.loads(

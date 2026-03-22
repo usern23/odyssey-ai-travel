@@ -26,9 +26,7 @@ class ClusterService:
         if hotel:
             clusters = self._sort_clusters_by_hotel(clusters, hotel)
         logger.debug(
-            f'Created {
-                len(clusters)} clusters from {
-                len(places)} places')
+            f'Created {len(clusters)} clusters from {len(places)} places')
         return clusters
 
     def _kmeans_cluster(self,

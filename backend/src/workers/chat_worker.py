@@ -44,7 +44,8 @@ class ChatWorker(RabbitMQConsumer):
             elif isinstance(event, ChatTitleUpdateEvent):
                 await self._handle_title_update(session, event)
             else:
-                logger.warning(f'Unknown event type: {event.event_type}')
+                logger.warning(
+                    'Unknown event type: %s', event.event_type)
 
     async def _handle_message_saved(
             self,
@@ -52,25 +53,26 @@ class ChatWorker(RabbitMQConsumer):
             event: MessageSavedEvent) -> None:
         message = ChatMessage(
             chat_id=event.chat_id,
-            role=MessageRole(
-                event.role),
+            role=MessageRole(event.role),
             content=event.content,
-            metadata_=event.metadata or {})
+            tool_name=event.tool_name,
+            tool_call_id=event.tool_call_id)
         session.add(message)
         await session.commit()
         logger.info(
-            f'Saved message to chat {
-                event.chat_id}, role={
-                event.role}')
+            'Saved message to chat %d, role=%s', event.chat_id, event.role)
 
     async def _handle_title_update(
             self,
             session: AsyncSession,
             event: ChatTitleUpdateEvent) -> None:
         from sqlalchemy import update
-        await session.execute(update(Chat).where(Chat.id == event.chat_id).values(title=event.title))
+        await session.execute(
+            update(Chat).where(
+                Chat.id == event.chat_id
+            ).values(title=event.title))
         await session.commit()
-        logger.info(f'Updated title for chat {event.chat_id}')
+        logger.info('Updated title for chat %d', event.chat_id)
 
 
 async def main():

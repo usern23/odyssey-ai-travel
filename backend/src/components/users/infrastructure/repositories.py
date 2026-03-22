@@ -19,6 +19,11 @@ class UserRepository:
         result = await self.session.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
+    async def get_by_yandex_id(self, yandex_id: str) -> Optional[User]:
+        result = await self.session.execute(
+            select(User).where(User.yandex_id == yandex_id))
+        return result.scalar_one_or_none()
+
     async def add(self, user: User) -> None:
         self.session.add(user)
 

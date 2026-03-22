@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.common.web.dependencies import get_current_user
 from src.components.chats.application.chat_service import ChatService
@@ -88,12 +88,13 @@ async def update_favorite(
         detail='Favorite not found')
 
 
-@router.delete('/{chat_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{chat_id}')
 async def remove_from_favorites(chat_id: int, current_user: User = Depends(
-        get_current_user), session: AsyncSession = Depends(get_db_session)) -> None:
+        get_current_user), session: AsyncSession = Depends(get_db_session)):
     favorites_service = FavoritesService(session)
     removed = await favorites_service.remove_from_favorites(user_id=current_user.id, chat_id=chat_id)
     if not removed:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail='Favorite not found')
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

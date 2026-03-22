@@ -33,7 +33,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/odyssey
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      REDIS_URL: redis://redis:6379/0
       PYTHONUNBUFFERED: "1"
     command: python -m src.workers.chat_worker
     depends_on:
@@ -82,20 +81,6 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
-  redis:
-    image: redis:7-alpine
-    container_name: odyssey_redis
-    restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - redis_data:/data
-
   db:
     image: postgis/postgis:16-3.4
     container_name: odyssey_postgres
@@ -116,5 +101,4 @@ services:
 
 volumes:
   postgres_data:
-  redis_data:
   rabbitmq_data:

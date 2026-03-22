@@ -73,18 +73,13 @@ class GenerateTravelPlanTool(BaseTool):
             hours_per_day: float = 8.0) -> str:
         result = await self.travel_planner.generate_travel_plan(chat_id=self.chat_id, destination=destination, places_json=places_json, hotel_name=hotel_name, hotel_lat=hotel_lat, hotel_lon=hotel_lon, start_date=start_date, num_days=num_days, hours_per_day=hours_per_day)
         if result['success']:
-            return f"✅ План путешествия создан!\n\n{
-                result['plan_markdown']}\n\n📊 Статистика:\n- Мест: {
-                result['total_places']}\n- Общее расстояние: {
-                result['total_distance_km']} км\n- Время в пути: {
-                result['total_travel_time_min']} мин"
+            return (f"✅ План путешествия создан!\n\n{result['plan_markdown']}\n\n"
+                    f"📊 Статистика:\n- Мест: {result['total_places']}\n"
+                    f"- Общее расстояние: {result['total_distance_km']} км\n"
+                    f"- Время в пути: {result['total_travel_time_min']} мин")
         else:
-            return f"❌ Ошибка: {
-                result.get(
-                    'message',
-                    result.get(
-                        'error',
-                        'Неизвестная ошибка'))}"
+            error_msg = result.get('message', result.get('error', 'Неизвестная ошибка'))
+            return f"❌ Ошибка: {error_msg}"
 
 
 class AddPlaceToTravelPlanTool(BaseTool):
@@ -171,10 +166,8 @@ class GeocodeTool(BaseTool):
     async def _arun(self, address: str, city: Optional[str] = None) -> str:
         result = await self.travel_planner.geocode_address(address, city)
         if result['success']:
-            return f"📍 Координаты для '{
-                result['address']}':\nШирота: {
-                result['lat']}\nДолгота: {
-                result['lon']}"
+            return (f"📍 Координаты для '{result['address']}':\n"
+                    f"Широта: {result['lat']}\nДолгота: {result['lon']}")
         else:
             return f"❌ {result['message']}"
 

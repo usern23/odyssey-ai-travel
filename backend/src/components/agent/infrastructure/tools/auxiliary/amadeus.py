@@ -1,7 +1,7 @@
 from __future__ import annotations
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 import httpx
 from src.common.configs.settings import settings
@@ -59,7 +59,7 @@ class AmadeusClient:
             data = response.json()
             self._access_token = data['access_token']
             expires_in = data.get('expires_in', 1800) - 60
-            self._token_expires = datetime.utcnow()
+            self._token_expires = datetime.utcnow() + timedelta(seconds=expires_in)
             logger.debug('Obtained new Amadeus access token')
             return self._access_token
 
@@ -174,8 +174,7 @@ class AmadeusClient:
             data = await self._make_request('GET', '/v1/shopping/flight-destinations', params=params)
         except httpx.HTTPStatusError as e:
             logger.error(
-                f'Amadeus inspiration search error: {
-                    e.response.text}')
+                f'Amadeus inspiration search error: {e.response.text}')
             return []
         results = []
         for dest in data.get('data', []):

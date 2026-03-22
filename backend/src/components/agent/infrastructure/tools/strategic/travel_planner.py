@@ -4,6 +4,9 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from src.components.travel_plan.domain.entities import Place, PlaceCategory, TravelPlan
 from src.components.travel_plan.application.travel_plan_service import TravelPlanService
 from src.components.travel_plan.infrastructure.ors_client import ORSClient
@@ -13,10 +16,38 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TravelPlannerTool:
 
-    def __init__(self, ors_client: Optional[ORSClient] = None):
+    def __init__(self, ors_client: Optional[ORSClient] = None,
+                 db_session: Optional[AsyncSession] = None):
         self.ors_client = ors_client or ORSClient()
         self.service = TravelPlanService(self.ors_client)
         self._current_plans: Dict[int, TravelPlan] = {}
+        self._db_session = db_session
+
+    async def _persist_plan(self, chat_id: int, plan: TravelPlan) -> None:
+        self._current_plans[chat_id] = plan
+
+    async def _get_plan(self, chat_id: int) -> Optional[TravelPlan]:
+        if chat_id in self._current_plans:
+            return self._current_plans[chat_id]
+        if not self._db_session:
+            return None
+        try:
+            from src.components.chats.infrastructure.models import Chat
+            result = await self._db_session.execute(
+                select(Chat).where(
+                    Chat.id == chat_id).options(
+                    selectinload(
+                        Chat.trip)))
+            chat = result.scalar_one_or_none()
+            if chat and chat.trip and chat.trip.generated_plan:
+                plan = TravelPlan.from_dict(chat.trip.generated_plan)
+                self._current_plans[chat_id] = plan
+                logger.info(
+                    f'Loaded travel plan from DB for chat {chat_id}')
+                return plan
+        except Exception as e:
+            logger.warning(f'Failed to load plan from DB: {e}')
+        return None
 
     async def generate_travel_plan(self,
                                    chat_id: int,
@@ -40,7 +71,7 @@ class TravelPlannerTool:
                 visit_duration_min=0)
             trip_start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
             plan = await self.service.generate_plan(destination=destination, places=places, hotel=hotel, start_date=trip_start_date, num_days=num_days, hours_per_day=hours_per_day)
-            self._current_plans[chat_id] = plan
+            await self._persist_plan(chat_id, plan)
             return {
                 'success': True,
                 'plan_markdown': plan.to_markdown(),
@@ -50,9 +81,7 @@ class TravelPlannerTool:
                     plan.total_distance_km,
                     1),
                 'total_travel_time_min': plan.total_travel_time_min,
-                'message': f'План создан: {
-                    plan.total_places} мест за {num_days} дней, {
-                    plan.total_distance_km:.1f} км пешком'}
+                'message': f'План создан: {plan.total_places} мест за {num_days} дней, {plan.total_distance_km:.1f} км пешком'}
         except json.JSONDecodeError as e:
             logger.error(f'Invalid places JSON: {e}')
             return {
@@ -75,7 +104,7 @@ class TravelPlannerTool:
                                 visit_duration_min: int = 60,
                                 description: Optional[str] = None) -> Dict[str,
                                                                            Any]:
-        plan = self._current_plans.get(chat_id)
+        plan = await self._get_plan(chat_id)
         if not plan:
             return {'success': False, 'error': 'Нет активного плана',
                     'message': 'Сначала нужно создать план путешествия.'}
@@ -89,7 +118,7 @@ class TravelPlannerTool:
                 visit_duration_min=visit_duration_min,
                 description=description)
             updated_plan = await self.service.add_place_to_plan(plan, new_place)
-            self._current_plans[chat_id] = updated_plan
+            await self._persist_plan(chat_id, updated_plan)
             return {
                 'success': True,
                 'plan_markdown': updated_plan.to_markdown(),
@@ -103,13 +132,13 @@ class TravelPlannerTool:
 
     async def remove_place_from_plan(
             self, chat_id: int, place_name: str) -> Dict[str, Any]:
-        plan = self._current_plans.get(chat_id)
+        plan = await self._get_plan(chat_id)
         if not plan:
             return {'success': False, 'error': 'Нет активного плана',
                     'message': 'Сначала нужно создать план путешествия.'}
         try:
             updated_plan = await self.service.remove_place_from_plan(plan, place_name)
-            self._current_plans[chat_id] = updated_plan
+            await self._persist_plan(chat_id, updated_plan)
             return {
                 'success': True,
                 'plan_markdown': updated_plan.to_markdown(),
@@ -122,7 +151,7 @@ class TravelPlannerTool:
                 'message': f'Не удалось удалить место: {e}'}
 
     async def get_current_plan(self, chat_id: int) -> Dict[str, Any]:
-        plan = self._current_plans.get(chat_id)
+        plan = await self._get_plan(chat_id)
         if not plan:
             return {
                 'success': False,

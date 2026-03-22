@@ -28,7 +28,10 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(
         String(320), unique=True, nullable=False, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(1024), nullable=False)
+    hashed_password: Mapped[Optional[str]] = mapped_column(
+        String(1024), nullable=True)
+    yandex_id: Mapped[Optional[str]] = mapped_column(
+        String(64), unique=True, nullable=True, index=True)
     timezone: Mapped[str] = mapped_column(
         String(64), nullable=False, default='UTC')
     created_at: Mapped[datetime] = mapped_column(

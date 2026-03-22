@@ -21,7 +21,8 @@ class ToolsManager:
         self._aviasales = AviasalesTool()
         self._amadeus = get_amadeus_client()
         self._ors_client = ORSClient()
-        self._travel_planner = TravelPlannerTool(ors_client=self._ors_client)
+        self._travel_planner = TravelPlannerTool(
+            ors_client=self._ors_client, db_session=db_session)
         self._web_search = WebSearchTool(model='gpt-4.1')
         self._destination_suggester = DestinationSuggester(
             db_session=db_session, web_search_tool=self._web_search)

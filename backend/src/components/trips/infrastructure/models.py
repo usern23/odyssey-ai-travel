@@ -40,7 +40,4 @@ class Trip(Base):
     chats: Mapped[List['Chat']] = relationship('Chat', back_populates='trip')
 
     def __repr__(self) -> str:
-        return f"<Trip(id={
-            self.id}, destination='{
-            self.destination}', user_id={
-            self.user_id})>"
+        return f"<Trip(id={self.id}, destination='{self.destination}', user_id={self.user_id})>"

@@ -95,8 +95,7 @@ class ORSClient:
         except httpx.HTTPStatusError as e:
             logger.error(f'Matrix error: {e.response.text}')
             raise ORSError(
-                f'Matrix calculation failed: {
-                    e.response.status_code}')
+                f'Matrix calculation failed: {e.response.status_code}')
         except Exception as e:
             logger.error(f'Matrix error: {e}')
             raise ORSError(f'Matrix calculation failed: {e}')
@@ -146,12 +145,7 @@ class ORSClient:
                 'geometry': geometry_data,
                 'segments': segments}
             logger.debug(
-                f"Route calculated: {
-                    len(points)} points, {
-                    result['distance'] /
-                    1000:.1f} km, {
-                    result['duration'] /
-                    60:.0f} min")
+                f"Route calculated: {len(points)} points, {result['distance'] / 1000:.1f} km, {result['duration'] / 60:.0f} min")
             return result
         except httpx.HTTPStatusError as e:
             logger.error(f'Directions error: {e.response.text}')
@@ -183,8 +177,7 @@ class ORSClient:
         all_points.append(hotel)
         if len(all_points) > 50:
             logger.warning(
-                f'Route has {
-                    len(all_points)} points, may need to split')
+                f'Route has {len(all_points)} points, may need to split')
         route = await self.get_directions(all_points, profile=profile)
         segments = route.get('segments', [])
         daily_segments = []

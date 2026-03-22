@@ -32,32 +32,20 @@ class UserProfileBase(BaseModel):
     @field_validator('travel_style', mode='before')
     @classmethod
     def normalize_travel_style(cls, v: str | TravelStyle):
-        print(f'DEBUG: normalize_travel_style input: {v!r}')
         if isinstance(v, str):
             try:
-                val = TravelStyle(v.lower()).value
-                print(f'DEBUG: normalize_travel_style converted: {val!r}')
-                return val
+                return TravelStyle(v.lower()).value
             except ValueError:
-                print(
-                    f'DEBUG: normalize_travel_style ValueError for {
-                        v.lower()!r}')
                 pass
         return v
 
     @field_validator('budget_preference', mode='before')
     @classmethod
     def normalize_budget_preference(cls, v: str | BudgetPreference):
-        print(f'DEBUG: normalize_budget_preference input: {v!r}')
         if isinstance(v, str):
             try:
-                val = BudgetPreference(v.lower()).value
-                print(f'DEBUG: normalize_budget_preference converted: {val!r}')
-                return val
+                return BudgetPreference(v.lower()).value
             except ValueError:
-                print(
-                    f'DEBUG: normalize_budget_preference ValueError for {
-                        v.lower()!r}')
                 pass
         return v
 

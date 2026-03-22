@@ -1,5 +1,5 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.common.web.dependencies import get_current_user
 from src.components.agent.application.services import AgentHostServiceV3
@@ -162,14 +162,15 @@ async def update_chat(
     return _chat_to_response(chat)
 
 
-@router.delete('/{chat_id}', status_code=status.HTTP_204_NO_CONTENT)
+@router.delete('/{chat_id}')
 async def delete_chat(
         chat_id: int,
         current_user: User = Depends(get_current_user),
-        session: AsyncSession = Depends(get_db_session)) -> None:
+        session: AsyncSession = Depends(get_db_session)):
     chat_service = ChatService(session)
     deleted = await chat_service.delete_chat(chat_id, current_user.id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail='Chat not found')
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

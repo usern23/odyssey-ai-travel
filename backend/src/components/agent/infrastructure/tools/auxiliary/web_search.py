@@ -29,8 +29,7 @@ class WebSearchTool:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 headers={
-                    'Authorization': f'Bearer {
-                        self.api_key}',
+                    'Authorization': f'Bearer {self.api_key}',
                     'Content-Type': 'application/json'},
                 timeout=60.0)
         return self._client
@@ -70,8 +69,7 @@ class WebSearchTool:
                     citations.append({'url': citation.get('url'), 'title': citation.get(
                         'title'), 'content': citation.get('content')})
             logger.info(
-                f'Web search completed: {
-                    len(citations)} citations found')
+                f'Web search completed: {len(citations)} citations found')
             return {
                 'success': True,
                 'content': content,
@@ -81,9 +79,7 @@ class WebSearchTool:
                 f'Web search HTTP error: {e.response.status_code} - {e.response.text}')
             return {
                 'success': False,
-                'error': f'HTTP {
-                    e.response.status_code}: {
-                    e.response.text}',
+                'error': f'HTTP {e.response.status_code}: {e.response.text}',
                 'content': '',
                 'citations': []}
         except Exception as e:

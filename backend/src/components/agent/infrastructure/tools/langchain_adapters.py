@@ -91,8 +91,6 @@ class SuggestFlightsLangTool(BaseTool):
                                                             Any]:
         logger.info(
             f'[SuggestFlights] Received: origin={origin}, destination={destination}, start_date={start_date}, end_date={end_date}')
-        print(
-            f'[SuggestFlights] Received: origin={origin}, destination={destination}, start_date={start_date}, end_date={end_date}')
         logger.info(
             f'[SuggestFlights] Trying Aviasales: {origin} -> {destination}')
         result = await self._aviasales_tool.get_cheapest_flight(origin=origin, destination=destination, start_date=start_date, end_date=end_date)
@@ -101,9 +99,7 @@ class SuggestFlightsLangTool(BaseTool):
         if has_result:
             result['provider'] = 'aviasales'
             logger.info(
-                f"[SuggestFlights] Aviasales found: {
-                    result.get('price')} {
-                    result.get('currency')}")
+                f"[SuggestFlights] Aviasales found: {result.get('price')} {result.get('currency')}")
             return result
         logger.info(
             f'[SuggestFlights] Aviasales no results, trying Amadeus fallback')
@@ -118,9 +114,7 @@ class SuggestFlightsLangTool(BaseTool):
             if offers:
                 best = offers[0]
                 logger.info(
-                    f'[SuggestFlights] Amadeus found: {
-                        best.price} {
-                        best.currency}')
+                    f'[SuggestFlights] Amadeus found: {best.price} {best.currency}')
                 return {
                     'origin': origin,
                     'destination': destination,
@@ -220,10 +214,7 @@ class WebSearchLangTool(BaseTool):
         if result['success']:
             return result['content']
         else:
-            return f"Ошибка поиска: {
-                result.get(
-                    'error',
-                    'Неизвестная ошибка')}"
+            return f"Ошибка поиска: {result.get('error', 'Неизвестная ошибка')}"
 
 
 class SearchPlacesInput(BaseModel):
@@ -260,8 +251,4 @@ class SearchPlacesLangTool(BaseTool):
             places = result['places']
             return json.dumps(places, ensure_ascii=False, indent=2)
         else:
-            return f"Не удалось найти места. Raw response: {
-                result.get(
-                    'raw_content',
-                    'N/A')[
-                    :500]}"
+            return f"Не удалось найти места. Raw response: {result.get('raw_content', 'N/A')[:500]}"

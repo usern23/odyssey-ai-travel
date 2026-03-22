@@ -32,8 +32,7 @@ class TravelPlanService:
             start_time: time = DEFAULT_START_TIME,
             use_real_distances: bool = True) -> TravelPlan:
         logger.info(
-            f'Generating plan for {destination}: {
-                len(places)} places, {num_days} days')
+            f'Generating plan for {destination}: {len(places)} places, {num_days} days')
         if not places:
             return self._empty_plan(destination, hotel, start_date, num_days)
         daily_clusters = self.cluster.cluster_with_time_budget(
@@ -67,10 +66,7 @@ class TravelPlanService:
             logger.warning(f'Could not get route geometry: {e}')
         plan = TravelPlan(destination=destination, hotel=hotel, days=day_plans)
         logger.info(
-            f'Plan generated: {
-                plan.total_places} places, {
-                plan.total_distance_km:.1f} km, {
-                plan.total_travel_time_min} min travel')
+            f'Plan generated: {plan.total_places} places, {plan.total_distance_km:.1f} km, {plan.total_travel_time_min} min travel')
         return plan
 
     def _empty_plan(
@@ -215,8 +211,7 @@ class TravelPlanService:
                     result.get('geometry', {}))
             except ORSError as e:
                 logger.warning(
-                    f'Could not get geometry for day {
-                        day_plan.day_number}: {e}')
+                    f'Could not get geometry for day {day_plan.day_number}: {e}')
 
     async def add_place_to_plan(
             self,

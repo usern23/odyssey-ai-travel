@@ -1,9 +1,11 @@
 from __future__ import annotations
 import asyncio
+import logging
 from datetime import date, timedelta
 from typing import Any, Dict, Iterable, Optional
 import httpx
 from src.common.configs import settings
+logger = logging.getLogger(__name__)
 
 
 class AviasalesTool:
@@ -28,9 +30,9 @@ class AviasalesTool:
                         if code:
                             return code
                 except (httpx.HTTPError, IndexError, KeyError, ValueError) as exc:
-                    print(
-                        f"[AviasalesTool] Autocomplete failed for '{city_name}' (locale={locale}): {exc}")
-        print(f"[AviasalesTool] Could not resolve IATA for '{city_name}'")
+                    logger.warning(
+                        "Autocomplete failed for '%s' (locale=%s): %s", city_name, locale, exc)
+        logger.warning("Could not resolve IATA for '%s'", city_name)
         return city_name
 
     async def get_cheapest_flight(self,
@@ -43,10 +45,10 @@ class AviasalesTool:
         depart_iso, return_iso = self._normalize_dates(start_date, end_date)
         origin_iata = await self._resolve_iata(origin)
         destination_iata = await self._resolve_iata(destination)
-        print(
-            f'[AviasalesTool] Querying LATEST: {origin_iata}->{destination_iata} ({depart_iso})')
+        logger.info(
+            'Querying LATEST: %s->%s (%s)', origin_iata, destination_iata, depart_iso)
         if not self.api_token:
-            print('[AviasalesTool] No API token provided.')
+            logger.error('No API token provided.')
             return {
                 'origin': origin_iata,
                 'destination': destination_iata,
@@ -65,13 +67,13 @@ class AviasalesTool:
             params['destination'] = destination_iata
         async with httpx.AsyncClient(timeout=20.0) as client:
             try:
-                print(f'[AviasalesTool] Sending request to {self.API_URL}')
+                logger.debug('Sending request to %s', self.API_URL)
                 response = await client.get(self.API_URL, params=params)
                 response.raise_for_status()
                 data = response.json()
-                print('[AviasalesTool] Received valid JSON response.')
+                logger.debug('Received valid JSON response.')
             except httpx.HTTPError as exc:
-                print(f'[AviasalesTool] Request failed: {exc}')
+                logger.error('Request failed: %s', exc)
                 return {
                     'origin': origin,
                     'destination': destination,
@@ -80,7 +82,7 @@ class AviasalesTool:
         entries = data.get('data', [])
         ticket = self._pick_best_latest_ticket(entries, depart_iso)
         if ticket is None:
-            print('[AviasalesTool] No suitable ticket found in response.')
+            logger.info('No suitable ticket found in response.')
             return {
                 'origin': origin_iata,
                 'destination': destination_iata,
@@ -92,10 +94,9 @@ class AviasalesTool:
                 'departure_at': None,
                 'return_at': None,
                 'price_updated_at': None}
-        print(
-            f"[AviasalesTool] Found ticket: {
-                ticket.get('value')} {currency}, updated at {
-                ticket.get('found_at')}")
+        logger.info(
+            'Found ticket: %s %s, updated at %s',
+            ticket.get('value'), currency, ticket.get('found_at'))
         result = {
             'origin': origin,
             'destination': destination,

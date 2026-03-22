@@ -52,10 +52,8 @@ class LangGraphAgent:
         messages = [
             SystemMessage(
                 content=system_prompt_text)] + state['messages']
-        print(f'DEBUG: System Prompt:\n{system_prompt_text}')
-        print(f'DEBUG: Messages sent to LLM ({len(messages)}):')
-        for m in messages:
-            print(f' - {m.type}: {str(m.content)[:100]}...')
+        logger.debug('System Prompt (first 200 chars): %s', system_prompt_text[:200])
+        logger.debug('Messages sent to LLM: %d', len(messages))
         response = await self.model.ainvoke(messages)
         return {'messages': [response]}
 

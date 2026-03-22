@@ -48,8 +48,7 @@ class AgentHostServiceV3:
             await publish_event(event)
         else:
             logger.debug(
-                f'Event publishing disabled, skipping: {
-                    event.event_type}')
+                f'Event publishing disabled, skipping: {event.event_type}')
 
     async def _load_context(self, user_id: int, chat: Chat) -> Dict[str, Any]:
         profile = await self.chat_service.get_user_profile(user_id)
@@ -126,13 +125,11 @@ class AgentHostServiceV3:
         if not chat:
             raise ValueError(f'Chat {chat_id} not found for user {user_id}')
         await self._publish(AgentProcessingStartedEvent(chat_id=chat_id, user_id=user_id, message=message))
-        await self.chat_service.add_message(chat_id=chat_id, role=MessageRole.USER, content=message)
         await self._publish(MessageSavedEvent(chat_id=chat_id, role=MessageRole.USER.value, content=message))
         new_title = await self._maybe_generate_title(chat, message)
         context = await self._load_context(user_id, chat)
         logger.debug(
-            f"Processing message for chat {chat_id}, context: {
-                context.get('chat')}")
+            f"Processing message for chat {chat_id}, context: {context.get('chat')}")
         agent = self._get_agent(chat_id)
         response = await agent.ainvoke(message=message, context=context)
         reply = response['reply']
@@ -154,7 +151,6 @@ class AgentHostServiceV3:
                         result_data, dict):
                     generated_plan = result_data
         if isinstance(reply, str) and reply:
-            await self.chat_service.add_message(chat_id=chat_id, role=MessageRole.ASSISTANT, content=reply)
             await self._publish(MessageSavedEvent(chat_id=chat_id, role=MessageRole.ASSISTANT.value, content=reply))
         await self._extract_travel_context(chat_id, tool_results)
         if generated_plan:

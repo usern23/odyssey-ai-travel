@@ -61,10 +61,7 @@ class Chat(Base):
         back_populates='chat', cascade='all, delete-orphan')
 
     def __repr__(self) -> str:
-        return f"<Chat(id={
-            self.id}, title='{
-            self.title}', trip_id={
-            self.trip_id})>"
+        return f"<Chat(id={self.id}, title='{self.title}', trip_id={self.trip_id})>"
 
 
 class ChatMessage(Base):
@@ -95,6 +92,4 @@ class ChatMessage(Base):
     def __repr__(self) -> str:
         content_preview = self.content[:50] + \
             '...' if len(self.content) > 50 else self.content
-        return f"<ChatMessage(id={
-            self.id}, role={
-            self.role}, content='{content_preview}')>"
+        return f"<ChatMessage(id={self.id}, role={self.role}, content='{content_preview}')>"

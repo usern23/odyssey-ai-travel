@@ -240,9 +240,7 @@ class TravelPlan:
             lines.append(f'')
             for i, activity in enumerate(day.activities, 1):
                 place = activity.place
-                time_str = f"{
-                    activity.start_time.strftime('%H:%M')}–{
-                    activity.end_time.strftime('%H:%M')}"
+                time_str = f"{activity.start_time.strftime('%H:%M')}–{activity.end_time.strftime('%H:%M')}"
                 if activity.travel_time_from_prev_min > 0:
                     travel_info = f'🚶 {activity.travel_time_from_prev_min} мин'
                 else:
@@ -255,7 +253,6 @@ class TravelPlan:
                     lines.append(f'   {travel_info}')
                 lines.append('')
             lines.append(
-                f'📍 Расстояние за день: {
-                    day.total_distance_km:.1f} км')
+                f'📍 Расстояние за день: {day.total_distance_km:.1f} км')
             lines.append(f'')
         return '\n'.join(lines)

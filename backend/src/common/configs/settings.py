@@ -1,4 +1,6 @@
 from __future__ import annotations
+import secrets
+import warnings
 from functools import lru_cache
 from typing import Any, List, Optional
 from pydantic import AliasChoices, Field, field_validator
@@ -18,6 +20,18 @@ class Settings(BaseSettings):
     jwt_algorithm: str = 'HS256'
     database_url: str = 'postgresql+asyncpg://postgres:postgres@localhost:5433/odyssey'
     cors_origins: Any = ['http://localhost', 'http://localhost:3000']
+
+    @field_validator('secret_key', mode='after')
+    @classmethod
+    def validate_secret_key(cls, v: str) -> str:
+        if v == 'CHANGE_ME':
+            warnings.warn(
+                'SECRET_KEY is not set! Using auto-generated key. '
+                'JWT tokens will be invalidated on restart. '
+                'Set SECRET_KEY in .env for production.',
+                stacklevel=2)
+            return secrets.token_urlsafe(32)
+        return v
     llm_api_base_url: Optional[str] = 'https://api.aitunnel.ru/v1/'
     llm_api_key: Optional[str] = Field(
         default=None,
@@ -52,8 +66,9 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices(
             'ORS_API_KEY', 'OPENROUTESERVICE_API_KEY'))
     ors_base_url: str = 'https://api.openrouteservice.org'
-    redis_url: str = 'redis://localhost:6379/0'
     rabbitmq_url: str = 'amqp://guest:guest@localhost:5672/'
+    yandex_client_id: Optional[str] = None
+    yandex_client_secret: Optional[str] = None
 
     @field_validator('cors_origins', mode='before')
     @classmethod

@@ -35,7 +35,4 @@ class Favorite(Base):
     chat: Mapped['Chat'] = relationship(back_populates='favorites')
 
     def __repr__(self) -> str:
-        return f'<Favorite(id={
-            self.id}, user_id={
-            self.user_id}, chat_id={
-            self.chat_id})>'
+        return f'<Favorite(id={self.id}, user_id={self.user_id}, chat_id={self.chat_id})>'

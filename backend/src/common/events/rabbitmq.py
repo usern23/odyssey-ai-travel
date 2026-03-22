@@ -75,9 +75,7 @@ class RabbitMQPublisher:
                 'event_id': event.event_id})
         await self._exchange.publish(message, routing_key=routing_key)
         logger.debug(
-            f"Published {
-                event.event_type} with routing key '{routing_key}', event_id={
-                event.event_id}")
+            f"Published {event.event_type} with routing key '{routing_key}', event_id={event.event_id}")
 
 
 _publisher: Optional[RabbitMQPublisher] = None

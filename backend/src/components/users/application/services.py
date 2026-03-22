@@ -40,8 +40,27 @@ class UserService:
         user = await self.repository.get_by_email(email)
         if not user:
             return None
+        if not user.hashed_password:
+            return None
         if not verify_password(password, user.hashed_password):
             return None
+        return user
+
+    async def get_or_create_yandex_user(
+            self, yandex_id: str, email: str) -> User:
+        user = await self.repository.get_by_yandex_id(yandex_id)
+        if user:
+            return user
+        existing = await self.repository.get_by_email(email)
+        if existing:
+            existing.yandex_id = yandex_id
+            await self.session.commit()
+            await self.session.refresh(existing)
+            return existing
+        user = User(email=email, yandex_id=yandex_id)
+        self.session.add(user)
+        await self.session.commit()
+        await self.session.refresh(user)
         return user
 
     async def get_profile(self, user_id: int) -> Optional[UserProfile]:
@@ -51,17 +70,6 @@ class UserService:
             self,
             user_id: int,
             payload: UserProfileCreate) -> UserProfile:
-        print(f'DEBUG: create_profile payload: {payload!r}')
-        print(
-            f'DEBUG: create_profile travel_style: {
-                payload.travel_style!r} (type: {
-                type(
-                    payload.travel_style)})')
-        print(
-            f'DEBUG: create_profile budget_preference: {
-                payload.budget_preference!r} (type: {
-                type(
-                    payload.budget_preference)})')
         profile = UserProfile(
             user_id=user_id,
             travel_style=payload.travel_style,
