@@ -57,18 +57,20 @@ class DestinationSuggester:
         criteria = {}
         if interests:
             criteria['interests'] = interests
-        elif profile and profile.primary_interests:
-            criteria['interests'] = profile.primary_interests
+        elif profile and profile.category_preferences:
+            top = [k for k, v in sorted(profile.category_preferences.items(), key=lambda x: x[1], reverse=True) if v >= 7][:3]
+            if top:
+                criteria['interests'] = top
         if budget:
             criteria['budget'] = budget
-        elif profile and profile.budget_preference:
-            criteria['budget'] = profile.budget_preference.value
+        elif profile and profile.budget_level:
+            criteria['budget'] = profile.budget_level.value if hasattr(profile.budget_level, 'value') else profile.budget_level
         if season:
             criteria['season'] = season
         if region:
             criteria['region'] = region
-        if profile and profile.travel_style:
-            criteria['travel_style'] = profile.travel_style.value
+        if profile and profile.activity_level:
+            criteria['travel_style'] = profile.activity_level.value if hasattr(profile.activity_level, 'value') else profile.activity_level
         return criteria
 
     def _build_search_query(self, criteria: Dict[str, Any], limit: int) -> str:
@@ -82,15 +84,15 @@ class DestinationSuggester:
             parts.append(f'для любителей: {interests_str}')
         if criteria.get('budget'):
             budget_map = {
-                'budget': 'бюджетный отдых',
-                'mid_range': 'средний бюджет',
-                'luxury': 'люкс отдых'}
+                'economy': 'бюджетный отдых',
+                'comfort': 'средний бюджет',
+                'unlimited': 'люкс отдых'}
             parts.append(budget_map.get(criteria['budget'], ''))
         if criteria.get('travel_style'):
             style_map = {
-                'relaxed': 'спокойный отдых',
-                'fast_paced': 'активный отдых',
-                'balanced': 'сбалансированный отдых'}
+                'calm': 'спокойный отдых',
+                'active': 'активный отдых',
+                'moderate': 'сбалансированный отдых'}
             parts.append(style_map.get(criteria['travel_style'], ''))
         return ' '.join(parts)
 

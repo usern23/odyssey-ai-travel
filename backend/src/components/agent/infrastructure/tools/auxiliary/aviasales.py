@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 class AviasalesTool:
-    API_URL = 'https://api.travelpayouts.com/v2/prices/latest'
+    LATEST_URL = 'https://api.travelpayouts.com/v2/prices/latest'
+    CHEAP_URL = 'https://api.travelpayouts.com/v1/prices/cheap'
     AUTOCOMPLETE_URL = 'https://autocomplete.travelpayouts.com/places2'
 
     def __init__(self, api_token: Optional[str] = None):
@@ -46,7 +47,8 @@ class AviasalesTool:
         origin_iata = await self._resolve_iata(origin)
         destination_iata = await self._resolve_iata(destination)
         logger.info(
-            'Querying LATEST: %s->%s (%s)', origin_iata, destination_iata, depart_iso)
+            'Querying flights: %s->%s (%s — %s)',
+            origin_iata, destination_iata, depart_iso, return_iso)
         if not self.api_token:
             logger.error('No API token provided.')
             return {
@@ -54,35 +56,26 @@ class AviasalesTool:
                 'destination': destination_iata,
                 'error': 'API token missing',
                 'provider': 'travelpayouts'}
-        params = {
-            'token': self.api_token,
-            'origin': origin_iata,
-            'currency': currency.lower(),
-            'period_type': 'day',
-            'limit': 30,
-            'page': 1,
-            'sorting': 'price',
-            'beginning_of_period': depart_iso}
-        if destination_iata:
-            params['destination'] = destination_iata
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            try:
-                logger.debug('Sending request to %s', self.API_URL)
-                response = await client.get(self.API_URL, params=params)
-                response.raise_for_status()
-                data = response.json()
-                logger.debug('Received valid JSON response.')
-            except httpx.HTTPError as exc:
-                logger.error('Request failed: %s', exc)
-                return {
-                    'origin': origin,
-                    'destination': destination,
-                    'error': str(exc),
-                    'provider': 'travelpayouts'}
-        entries = data.get('data', [])
-        ticket = self._pick_best_latest_ticket(entries, depart_iso)
-        if ticket is None:
-            logger.info('No suitable ticket found in response.')
+
+        # Query both endpoints in parallel
+        latest_task = self._query_latest(origin_iata, destination_iata, depart_iso, currency)
+        cheap_task = self._query_cheap(origin_iata, destination_iata, depart_iso, return_iso, currency)
+        latest_result, cheap_result = await asyncio.gather(latest_task, cheap_task, return_exceptions=True)
+
+        candidates = []
+
+        # Process /v2/prices/latest
+        if isinstance(latest_result, dict) and latest_result.get('price'):
+            latest_result['type'] = 'one_way'
+            candidates.append(latest_result)
+
+        # Process /v1/prices/cheap
+        if isinstance(cheap_result, dict) and cheap_result.get('price'):
+            cheap_result['type'] = 'round_trip'
+            candidates.append(cheap_result)
+
+        if not candidates:
+            logger.info('No tickets found from either endpoint.')
             return {
                 'origin': origin_iata,
                 'destination': destination_iata,
@@ -91,24 +84,106 @@ class AviasalesTool:
                 'provider': 'travelpayouts',
                 'requested_start_date': depart_iso,
                 'requested_end_date': return_iso,
-                'departure_at': None,
-                'return_at': None,
-                'price_updated_at': None}
-        logger.info(
-            'Found ticket: %s %s, updated at %s',
-            ticket.get('value'), currency, ticket.get('found_at'))
-        result = {
-            'origin': origin,
-            'destination': destination,
-            'price': ticket.get('value'),
+                'flights': []}
+
+        # Sort by price
+        candidates.sort(key=lambda c: c.get('price', float('inf')))
+
+        # Build response with all found options
+        flights = []
+        for c in candidates:
+            flights.append({
+                'price': c['price'],
+                'currency': currency.lower(),
+                'type': c.get('type', 'unknown'),
+                'airline': c.get('airline'),
+                'departure_at': c.get('departure_at'),
+                'return_at': c.get('return_at'),
+                'price_found_at': c.get('price_found_at'),
+            })
+
+        best = candidates[0]
+        return {
+            'origin': origin_iata,
+            'destination': destination_iata,
+            'price': best['price'],
             'currency': currency.lower(),
+            'type': best.get('type', 'unknown'),
+            'airline': best.get('airline'),
             'provider': 'travelpayouts',
             'requested_start_date': depart_iso,
             'requested_end_date': return_iso,
+            'departure_at': best.get('departure_at'),
+            'return_at': best.get('return_at'),
+            'price_found_at': best.get('price_found_at'),
+            'flights': flights}
+
+    async def _query_latest(self, origin: str, destination: str,
+                            depart_iso: str, currency: str) -> Optional[Dict[str, Any]]:
+        """Query /v2/prices/latest — cached one-way prices by month."""
+        params = {
+            'token': self.api_token,
+            'origin': origin,
+            'currency': currency.lower(),
+            'period_type': 'month',
+            'limit': 30,
+            'page': 1,
+            'sorting': 'price',
+            'beginning_of_period': depart_iso[:7] + '-01',
+        }
+        if destination:
+            params['destination'] = destination
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            try:
+                response = await client.get(self.LATEST_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as exc:
+                logger.warning('Latest API failed: %s', exc)
+                return None
+        entries = data.get('data', [])
+        ticket = self._pick_best_latest_ticket(entries, depart_iso)
+        if not ticket:
+            return None
+        return {
+            'price': ticket.get('value'),
             'departure_at': ticket.get('depart_date'),
             'return_at': ticket.get('return_date'),
-            'price_updated_at': ticket.get('found_at')}
-        return result
+            'price_found_at': ticket.get('found_at'),
+            'airline': None,
+        }
+
+    async def _query_cheap(self, origin: str, destination: str,
+                           depart_iso: str, return_iso: str,
+                           currency: str) -> Optional[Dict[str, Any]]:
+        """Query /v1/prices/cheap — round-trip prices."""
+        params = {
+            'token': self.api_token,
+            'origin': origin,
+            'destination': destination,
+            'depart_date': depart_iso[:7],
+            'return_date': return_iso[:7],
+            'currency': currency.lower(),
+        }
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            try:
+                response = await client.get(self.CHEAP_URL, params=params)
+                response.raise_for_status()
+                data = response.json()
+            except httpx.HTTPError as exc:
+                logger.warning('Cheap API failed: %s', exc)
+                return None
+        tickets = data.get('data', {})
+        ticket = self._pick_closest_ticket(tickets.get(destination, {}), depart_iso)
+        if not ticket:
+            return None
+        return {
+            'price': ticket.get('price'),
+            'departure_at': ticket.get('departure_at', '')[:10] if ticket.get('departure_at') else None,
+            'return_at': ticket.get('return_at', '')[:10] if ticket.get('return_at') else None,
+            'price_found_at': ticket.get('found_at'),
+            'airline': ticket.get('airline'),
+        }
 
     @staticmethod
     def _pick_best_latest_ticket(

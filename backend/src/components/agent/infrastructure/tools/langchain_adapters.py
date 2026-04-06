@@ -223,13 +223,13 @@ class SearchPlacesInput(BaseModel):
         default=['достопримечательности'],
         description='Список интересов: музеи, архитектура, парки, рестораны и т.д.')
     num_places: int = Field(
-        default=6,
-        description='Количество мест для поиска (по умолчанию 6)')
+        default=50,
+        description='Количество мест для поиска (по умолчанию 50, максимум 120)')
 
 
 class SearchPlacesLangTool(BaseTool):
     name: str = 'search_places'
-    description: str = 'Найти достопримечательности и места с координатами для построения маршрута.\n\nВозвращает список мест в формате JSON с полями:\n- name: название места\n- lat: широта\n- lon: долгота  \n- category: категория (museum, landmark, park, restaurant, religious, etc)\n- visit_duration_min: время посещения в минутах\n- description: краткое описание\n\nИспользуй этот инструмент ПЕРЕД вызовом generate_travel_plan!'
+    description: str = 'Найти достопримечательности и места с координатами для построения маршрута.\n\nИспользует 2GIS API для точных координат и рейтингов + LLM для описаний.\nМожно запрашивать до 120 мест (для длительных поездок 7-10 дней).\n\nВозвращает список мест в формате JSON с полями:\n- name: название места\n- lat: широта (точные координаты из 2GIS)\n- lon: долгота\n- category: категория (museum, landmark, park, restaurant, religious, etc)\n- visit_duration_min: время посещения в минутах\n- rating: рейтинг из реальных отзывов\n- price_level: уровень цен (1-5)\n- description: краткое описание\n\nИспользуй этот инструмент ПЕРЕД вызовом generate_travel_plan!'
     args_schema: Type[BaseModel] = SearchPlacesInput
     _tool: Any = None
 
@@ -244,7 +244,7 @@ class SearchPlacesLangTool(BaseTool):
             self,
             city: str,
             interests: List[str] = None,
-            num_places: int = 6) -> str:
+            num_places: int = 50) -> str:
         import json
         result = await self._tool.search_places(city=city, interests=interests or ['достопримечательности'], num_places=num_places)
         if result['success'] and result.get('places'):

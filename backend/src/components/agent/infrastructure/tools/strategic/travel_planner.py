@@ -58,7 +58,9 @@ class TravelPlannerTool:
                                    hotel_lon: float,
                                    start_date: str,
                                    num_days: int,
-                                   hours_per_day: float = 8.0) -> Dict[str,
+                                   hours_per_day: float = 8.0,
+                                   b_max_per_day: float = float('inf'),
+                                   user_preferences: Optional[Dict[str, float]] = None) -> Dict[str,
                                                                        Any]:
         try:
             places_data = json.loads(places_json)
@@ -70,7 +72,7 @@ class TravelPlannerTool:
                 category=PlaceCategory.HOTEL,
                 visit_duration_min=0)
             trip_start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-            plan = await self.service.generate_plan(destination=destination, places=places, hotel=hotel, start_date=trip_start_date, num_days=num_days, hours_per_day=hours_per_day)
+            plan = await self.service.generate_plan(destination=destination, places=places, hotel=hotel, start_date=trip_start_date, num_days=num_days, hours_per_day=hours_per_day, b_max_per_day=b_max_per_day, user_preferences=user_preferences)
             await self._persist_plan(chat_id, plan)
             return {
                 'success': True,
@@ -200,7 +202,8 @@ class TravelPlannerTool:
                 60),
             description=data.get('description'),
             opening_hours=data.get('opening_hours'),
-            rating=data.get('rating'))
+            rating=data.get('rating'),
+            price_level=data.get('price_level'))
 
 
 PLACE_EXAMPLE = '\n{\n  "name": "Эрмитаж",\n  "lat": 59.9398,\n  "lon": 30.3146,\n  "category": "museum",\n  "visit_duration_min": 180,\n  "description": "Один из крупнейших музеев мира",\n  "opening_hours": "10:30-18:00"\n}\n'

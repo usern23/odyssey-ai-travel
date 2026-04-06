@@ -57,5 +57,5 @@ class ToolsManager:
                     self._web_search), SearchPlacesLangTool(
                         self._web_search)]
         travel_tools = create_travel_plan_tools(
-            travel_planner=self._travel_planner, chat_id=self.chat_id)
+            travel_planner=self._travel_planner, chat_id=self.chat_id, db_session=self.db_session)
         return base_tools + travel_tools
