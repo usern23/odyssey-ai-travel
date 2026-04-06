@@ -3,11 +3,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 import bcrypt
 from fastapi import HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from src.common.configs import settings
-oauth2_scheme = OAuth2PasswordBearer(
-    tokenUrl=f'{settings.api_v1_prefix}/auth/login')
+bearer_scheme = HTTPBearer()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

@@ -25,6 +25,15 @@ async def create_profile(
     return UserProfileRead.model_validate(profile, from_attributes=True)
 
 
+@router.get('/me/profile/status')
+async def profile_status(
+        current_user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_db_session)):
+    service = UserService(session)
+    profile = await service.get_profile(current_user.id)
+    return {'has_profile': profile is not None}
+
+
 @router.get('/me/profile', response_model=UserProfileRead)
 async def read_profile(
         current_user: User = Depends(get_current_user),

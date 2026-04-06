@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     jwt_algorithm: str = 'HS256'
     database_url: str = 'postgresql+asyncpg://postgres:postgres@localhost:5433/odyssey'
-    cors_origins: Any = ['http://localhost', 'http://localhost:3000']
+    cors_origins: Any = ['http://localhost', 'http://localhost:3000', 'http://localhost:5173']
 
     @field_validator('secret_key', mode='after')
     @classmethod

@@ -72,11 +72,12 @@ class UserService:
             payload: UserProfileCreate) -> UserProfile:
         profile = UserProfile(
             user_id=user_id,
-            travel_style=payload.travel_style,
-            primary_interests=payload.primary_interests,
-            budget_preference=payload.budget_preference,
-            preferred_activities=payload.preferred_activities,
-            disliked_activities=payload.disliked_activities)
+            activity_level=payload.activity_level,
+            budget_level=payload.budget_level,
+            category_preferences=payload.category_preferences,
+            landscape_preferences=payload.landscape_preferences,
+            food_preferences=payload.food_preferences,
+            accommodation_preference=payload.accommodation_preference)
         await self.repository.add_profile(profile)
         await self.session.commit()
         await self.session.refresh(profile)
