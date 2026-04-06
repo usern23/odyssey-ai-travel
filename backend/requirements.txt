@@ -16,4 +16,5 @@ python-multipart==0.0.9
 openai==1.58.1
 alembic==1.13.3
 aio-pika==9.4.0
+folium==0.18.0
 

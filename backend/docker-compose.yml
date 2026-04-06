@@ -13,7 +13,11 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/odyssey
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       PYTHONUNBUFFERED: "1"
-    command: uvicorn services.gateway.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    command: >
+      sh -c "PYTHONPATH=/app alembic -c src/alembic.ini upgrade head &&
+             uvicorn services.gateway.main:app --host 0.0.0.0 --port 8000 --reload"
     ports:
       - "${APP_PORT:-8080}:8000"
     depends_on:
