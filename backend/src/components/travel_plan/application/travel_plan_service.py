@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.components.travel_plan.domain.entities import Activity, DayPlan, Place, PlaceCategory, TravelPlan
 from src.components.travel_plan.infrastructure.ors_client import ORSClient, ORSError
 from src.components.travel_plan.application.tsp_solver import TSPSolver, build_distance_matrix_haversine, estimate_walking_time
-from src.components.travel_plan.application.cluster_service import ClusterService
+from src.components.travel_plan.application.orienteering_solver import OrienteeringSolver, OPConfig, OPPlaceParams
 logger = logging.getLogger(__name__)
 
 
@@ -19,7 +19,7 @@ class TravelPlanService:
     def __init__(self, ors_client: Optional[ORSClient] = None):
         self.ors = ors_client or ORSClient()
         self.tsp = TSPSolver()
-        self.cluster = ClusterService()
+        self.op = OrienteeringSolver()
 
     async def generate_plan(
             self,
@@ -29,17 +29,17 @@ class TravelPlanService:
             start_date: date,
             num_days: int,
             hours_per_day: float = 8.0,
+            b_max_per_day: float = float('inf'),
             start_time: time = DEFAULT_START_TIME,
-            use_real_distances: bool = True) -> TravelPlan:
+            use_real_distances: bool = True,
+            user_preferences: Optional[Dict[str, float]] = None) -> TravelPlan:
         logger.info(
             f'Generating plan for {destination}: {len(places)} places, {num_days} days')
         if not places:
             return self._empty_plan(destination, hotel, start_date, num_days)
-        daily_clusters = self.cluster.cluster_with_time_budget(
-            places=places, num_days=num_days, hours_per_day=hours_per_day)
-        logger.debug(
-            f'Clustered into {len(daily_clusters)} days: {[len(c) for c in daily_clusters]}')
-        all_points = self._collect_all_points(hotel, daily_clusters)
+
+        # Строим матрицу расстояний для всех кандидатов + отель (depot)
+        all_points = [(hotel.lat, hotel.lon)] + [(p.lat, p.lon) for p in places]
         if use_real_distances:
             try:
                 distance_matrix = await self._get_ors_matrix(all_points)
@@ -48,17 +48,26 @@ class TravelPlanService:
                 distance_matrix = build_distance_matrix_haversine(all_points)
         else:
             distance_matrix = build_distance_matrix_haversine(all_points)
-        optimized_days = self._optimize_daily_routes(
-            hotel=hotel,
-            daily_clusters=daily_clusters,
+
+        # Решаем задачу командного ориентирования (TOP)
+        optimized_days = self._solve_orienteering(
+            places=places,
             distance_matrix=distance_matrix,
-            all_points=all_points)
+            num_days=num_days,
+            hours_per_day=hours_per_day,
+            b_max_per_day=b_max_per_day,
+            user_preferences=user_preferences)
+
+        # Перестраиваем all_points и матрицу под отобранные места
+        selected_all_points = self._collect_all_points(hotel, optimized_days)
+        selected_matrix = self._build_sub_matrix(selected_all_points, all_points, distance_matrix)
+
         day_plans = self._build_schedule(
             optimized_days=optimized_days,
             start_date=start_date,
             start_time=start_time,
-            distance_matrix=distance_matrix,
-            all_points=all_points,
+            distance_matrix=selected_matrix,
+            all_points=selected_all_points,
             hotel=hotel)
         try:
             await self._add_route_geometry(day_plans, hotel)
@@ -98,40 +107,80 @@ class TravelPlanService:
         durations = result['durations']
         return [[d / 60 if d else 0 for d in row] for row in durations]
 
-    def _optimize_daily_routes(self,
-                               hotel: Place,
-                               daily_clusters: List[List[Place]],
-                               distance_matrix: List[List[float]],
-                               all_points: List[Tuple[float,
-                                                      float]]) -> List[List[Place]]:
-        optimized = []
-        place_to_idx = {0: 0}
-        idx = 1
-        for cluster in daily_clusters:
-            for place in cluster:
-                place_to_idx[id(place)] = idx
-                idx += 1
-        for day_places in daily_clusters:
-            if not day_places:
-                optimized.append([])
-                continue
-            if len(day_places) == 1:
-                optimized.append(day_places)
-                continue
-            indices = [0] + [place_to_idx[id(p)] for p in day_places]
-            sub_matrix = [[distance_matrix[i][j]
-                           for j in indices] for i in indices]
-            route = self.tsp.solve(
-                sub_matrix, start_idx=0, return_to_start=True)
-            ordered_places = []
-            for route_idx in route:
-                if route_idx == 0:
-                    continue
-                place_idx = route_idx - 1
-                if 0 <= place_idx < len(day_places):
-                    ordered_places.append(day_places[place_idx])
-            optimized.append(ordered_places)
+    def _solve_orienteering(
+        self,
+        places: List[Place],
+        distance_matrix: List[List[float]],
+        num_days: int,
+        hours_per_day: float,
+        b_max_per_day: float,
+        user_preferences: Optional[Dict[str, float]] = None,
+    ) -> List[List[Place]]:
+        """Решает задачу командного ориентирования (TOP) и возвращает дневные маршруты."""
+        # Строим OPPlaceParams для каждого кандидата (индекс 0 = depot/hotel)
+        candidates = []
+        for i, p in enumerate(places):
+            candidates.append(OPPlaceParams(
+                index=i + 1,  # +1 т.к. 0 = depot
+                visit_duration_min=p.visit_duration_min,
+                cost=float(p.price_level) if p.price_level else 2.0,
+                rating=p.rating if p.rating is not None else 3.0,
+                category=p.category.value,
+            ))
+
+        # Конфигурация с ограничениями из профиля пользователя
+        config = OPConfig(
+            t_max_per_day=hours_per_day * 60,
+            b_max_per_day=b_max_per_day,
+        )
+        solver = OrienteeringSolver(config)
+
+        solution = solver.solve(
+            distance_matrix=distance_matrix,
+            time_matrix=None,
+            candidates=candidates,
+            num_days=num_days,
+            depot_idx=0,
+            user_preferences=user_preferences,
+        )
+
+        # Конвертируем индексы обратно в объекты Place
+        optimized: List[List[Place]] = []
+        for route in solution.routes:
+            day_places = []
+            for idx in route:
+                place_i = idx - 1  # обратно из индекса матрицы
+                if 0 <= place_i < len(places):
+                    day_places.append(places[place_i])
+            optimized.append(day_places)
+
+        logger.info(
+            f'TOP solution: {sum(len(d) for d in optimized)}/{len(places)} '
+            f'places selected, F*={solution.objective:.4f}'
+        )
         return optimized
+
+    def _build_sub_matrix(
+        self,
+        selected_points: List[Tuple[float, float]],
+        all_points: List[Tuple[float, float]],
+        full_matrix: List[List[float]],
+    ) -> List[List[float]]:
+        """Извлекает подматрицу расстояний для отобранных точек."""
+        # Маппинг координат → индекс в полной матрице
+        coord_to_full_idx: Dict[Tuple[float, float], int] = {}
+        for i, pt in enumerate(all_points):
+            coord_to_full_idx[pt] = i
+
+        indices = []
+        for pt in selected_points:
+            full_idx = coord_to_full_idx.get(pt, 0)
+            indices.append(full_idx)
+
+        return [
+            [full_matrix[i][j] for j in indices]
+            for i in indices
+        ]
 
     def _build_schedule(self,
                         optimized_days: List[List[Place]],
@@ -217,18 +266,20 @@ class TravelPlanService:
             self,
             plan: TravelPlan,
             place: Place,
-            day_number: Optional[int] = None) -> TravelPlan:
+            day_number: Optional[int] = None,
+            user_preferences: Optional[Dict[str, float]] = None) -> TravelPlan:
         all_places = plan.get_all_places()
         all_places.append(place)
-        return await self.generate_plan(destination=plan.destination, places=all_places, hotel=plan.hotel, start_date=plan.start_date, num_days=plan.num_days)
+        return await self.generate_plan(destination=plan.destination, places=all_places, hotel=plan.hotel, start_date=plan.start_date, num_days=plan.num_days, user_preferences=user_preferences)
 
     async def remove_place_from_plan(
             self,
             plan: TravelPlan,
-            place_name: str) -> TravelPlan:
+            place_name: str,
+            user_preferences: Optional[Dict[str, float]] = None) -> TravelPlan:
         all_places = [p for p in plan.get_all_places(
         ) if p.name.lower() != place_name.lower()]
-        return await self.generate_plan(destination=plan.destination, places=all_places, hotel=plan.hotel, start_date=plan.start_date, num_days=plan.num_days)
+        return await self.generate_plan(destination=plan.destination, places=all_places, hotel=plan.hotel, start_date=plan.start_date, num_days=plan.num_days, user_preferences=user_preferences)
 
     async def geocode_hotel(self, address: str, city: str) -> Optional[Place]:
         full_address = f'{address}, {city}'
