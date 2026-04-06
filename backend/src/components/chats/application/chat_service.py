@@ -90,8 +90,9 @@ class ChatService:
             return None
         return {
             'user_id': profile.user_id,
-            'travel_style': profile.travel_style.value,
-            'primary_interests': profile.primary_interests,
-            'budget_preference': profile.budget_preference.value,
-            'preferred_activities': profile.preferred_activities,
-            'disliked_activities': profile.disliked_activities}
+            'activity_level': profile.activity_level.value if hasattr(profile.activity_level, 'value') else profile.activity_level,
+            'budget_level': profile.budget_level.value if hasattr(profile.budget_level, 'value') else profile.budget_level,
+            'category_preferences': profile.category_preferences,
+            'landscape_preferences': profile.landscape_preferences,
+            'food_preferences': profile.food_preferences,
+            'accommodation_preference': profile.accommodation_preference.value if profile.accommodation_preference and hasattr(profile.accommodation_preference, 'value') else profile.accommodation_preference}

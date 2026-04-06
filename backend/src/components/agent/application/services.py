@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.common.events.rabbitmq import publish_event
@@ -91,11 +91,17 @@ class AgentHostServiceV3:
             chat: Chat,
             user_message: str) -> Optional[str]:
         if chat.title == 'Новый чат':
-            title = user_message[:50].strip()
-            if len(user_message) > 50:
-                title += '...'
+            try:
+                agent = self._get_agent(chat.id)
+                title = await agent.generate_title(user_message)
+            except Exception as e:
+                logger.warning(f'LLM title generation failed: {e}')
+                title = user_message[:50].strip()
+                if len(user_message) > 50:
+                    title += '...'
+            await self.chat_service.update_chat_title(chat.id, title)
             await self._publish(ChatTitleUpdateEvent(chat_id=chat.id, title=title))
-            logger.info(f'Published title update for chat {chat.id}: {title}')
+            logger.info(f'Updated title for chat {chat.id}: {title}')
             return title
         return None
 
@@ -125,6 +131,7 @@ class AgentHostServiceV3:
         if not chat:
             raise ValueError(f'Chat {chat_id} not found for user {user_id}')
         await self._publish(AgentProcessingStartedEvent(chat_id=chat_id, user_id=user_id, message=message))
+        await self.chat_service.add_message(chat_id, MessageRole.USER, message)
         await self._publish(MessageSavedEvent(chat_id=chat_id, role=MessageRole.USER.value, content=message))
         new_title = await self._maybe_generate_title(chat, message)
         context = await self._load_context(user_id, chat)
@@ -151,6 +158,7 @@ class AgentHostServiceV3:
                         result_data, dict):
                     generated_plan = result_data
         if isinstance(reply, str) and reply:
+            await self.chat_service.add_message(chat_id, MessageRole.ASSISTANT, reply)
             await self._publish(MessageSavedEvent(chat_id=chat_id, role=MessageRole.ASSISTANT.value, content=reply))
         await self._extract_travel_context(chat_id, tool_results)
         if generated_plan:
@@ -166,6 +174,34 @@ class AgentHostServiceV3:
             reply=reply,
             chat_id=chat_id,
             metadata=metadata)
+
+    async def stream_message(
+            self,
+            user_id: int,
+            chat_id: int,
+            message: str) -> AsyncIterator[Dict[str, Any]]:
+        """Stream agent response as SSE events."""
+        chat = await self.chat_service.get_chat(chat_id, user_id)
+        if not chat:
+            raise ValueError(f'Chat {chat_id} not found for user {user_id}')
+        await self.chat_service.add_message(chat_id, MessageRole.USER, message)
+        new_title = await self._maybe_generate_title(chat, message)
+        if new_title:
+            yield {'event': 'title', 'data': json.dumps({'chat_id': chat_id, 'title': new_title})}
+        context = await self._load_context(user_id, chat)
+        agent = self._get_agent(chat_id)
+        full_reply = ''
+        async for chunk in agent.astream(message=message, context=context):
+            if chunk['type'] == 'token':
+                full_reply += chunk['content']
+                yield {'event': 'token', 'data': json.dumps({'content': chunk['content']})}
+            elif chunk['type'] == 'tool_start':
+                yield {'event': 'tool_start', 'data': json.dumps({'tool': chunk['content']})}
+            elif chunk['type'] == 'tool_end':
+                yield {'event': 'tool_end', 'data': json.dumps({'tool': chunk['content']})}
+        if full_reply:
+            await self.chat_service.add_message(chat_id, MessageRole.ASSISTANT, full_reply)
+        yield {'event': 'done', 'data': json.dumps({'chat_id': chat_id, 'reply': full_reply})}
 
     async def create_chat_and_process(
             self, user_id: int, message: str) -> tuple[Chat, AgentChatResponse]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.common.web.dependencies import get_current_user
 from src.components.agent.application.services import AgentHostServiceV3
@@ -142,6 +143,74 @@ async def send_message(
         chat_id=chat_id,
         chat_title=chat.title if chat else 'Новый чат',
         metadata=response.metadata)
+
+
+@router.post('/{chat_id}/stream')
+async def stream_message(
+        chat_id: int,
+        payload: ChatMessageRequest,
+        current_user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_db_session)):
+    chat_service = ChatService(session)
+    chat = await chat_service.get_chat(chat_id, current_user.id)
+    if not chat:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail='Chat not found')
+    agent_service = AgentHostServiceV3(db_session=session)
+
+    async def event_generator():
+        try:
+            async for event in agent_service.stream_message(
+                    user_id=current_user.id, chat_id=chat_id, message=payload.message):
+                yield f"event: {event['event']}\ndata: {event['data']}\n\n"
+        except Exception as e:
+            import json
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'})
+
+
+@router.post('/stream', status_code=status.HTTP_201_CREATED)
+async def stream_new_chat(
+        payload: ChatCreate,
+        current_user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_db_session)):
+    chat_service = ChatService(session)
+    chat = await chat_service.create_chat(current_user.id)
+    if not payload.message:
+        import json
+        async def empty_gen():
+            yield f"event: done\ndata: {json.dumps({'chat_id': chat.id, 'reply': ''})}\n\n"
+        return StreamingResponse(
+            empty_gen(),
+            media_type='text/event-stream',
+            headers={'Cache-Control': 'no-cache', 'Connection': 'keep-alive', 'X-Accel-Buffering': 'no'})
+    agent_service = AgentHostServiceV3(db_session=session)
+
+    async def event_generator():
+        import json
+        yield f"event: chat_created\ndata: {json.dumps({'chat_id': chat.id})}\n\n"
+        try:
+            async for event in agent_service.stream_message(
+                    user_id=current_user.id, chat_id=chat.id, message=payload.message):
+                yield f"event: {event['event']}\ndata: {event['data']}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'X-Accel-Buffering': 'no'})
 
 
 @router.patch('/{chat_id}', response_model=ChatResponse)
