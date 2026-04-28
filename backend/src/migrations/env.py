@@ -12,7 +12,7 @@ from src.components.users.infrastructure import models as user_models
 from src.components.trips.infrastructure import models as trip_models
 from src.components.agent.infrastructure import models as agent_models
 from src.components.chats.infrastructure import models as chat_models
-from src.components.favorites.infrastructure import models as favorite_models
+from src.components.favorites.infrastructure.models import Favorite as _favorite_model
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

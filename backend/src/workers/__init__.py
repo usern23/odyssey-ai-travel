@@ -1,4 +1,7 @@
-from src.workers.chat_worker import ChatWorker
-from src.workers.favorites_worker import FavoritesWorker
-from src.workers.trip_worker import TripWorker
-__all__ = ['ChatWorker', 'FavoritesWorker', 'TripWorker']
+"""Workers package.
+
+Avoid importing worker modules at package import time to prevent
+cross-module side effects during python -m startup.
+"""
+
+__all__: list[str] = []

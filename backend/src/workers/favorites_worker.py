@@ -7,7 +7,10 @@ from sqlalchemy.orm import sessionmaker
 from src.common.configs.settings import settings
 from src.common.events.rabbitmq import RabbitMQConsumer, QUEUE_FAVORITES_PROCESSOR, ROUTING_KEY_FAVORITES_ADDED
 from src.common.events.types import AddToFavoritesEvent, Event
-from src.components.favorites.infrastructure.models import Favorite
+from src.components.favorites.infrastructure.models.FavoriteModel import Favorite
+from src.components.users.infrastructure.models import User  # noqa: F401
+from src.components.chats.infrastructure.models import Chat  # noqa: F401
+from src.components.trips.infrastructure.models import Trip  # noqa: F401
 logger = logging.getLogger(__name__)
 
 

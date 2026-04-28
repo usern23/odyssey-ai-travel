@@ -131,6 +131,17 @@ class ApiClient {
     return this.request<ChatWithMessages>('GET', `/chats/${chatId}`);
   }
 
+  async getRouteMap(chatId: number, refresh: boolean = false): Promise<string> {
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    const qs = refresh ? `?refresh=1&_=${Date.now()}` : `?_=${Date.now()}`;
+    const res = await fetch(`${API_BASE}/chats/${chatId}/route-map${qs}`, { headers, cache: 'no-store' });
+    if (!res.ok) throw new ApiError(res.status, 'Failed to load map');
+    return res.text();
+  }
+
   async sendMessage(chatId: number, message: string) {
     return this.request<AgentReply>('POST', `/chats/${chatId}/messages`, { message });
   }
@@ -176,14 +187,13 @@ class ApiClient {
         if (!reader) return;
         const decoder = new TextDecoder();
         let buffer = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
+        let sawDone = false;
+
+        const handleSseBlock = (block: string) => {
+          const lines = block.split('\n');
           let currentEvent = '';
-          for (const line of lines) {
+          for (const rawLine of lines) {
+            const line = rawLine.replace(/\r$/, '');
             if (line.startsWith('event: ')) {
               currentEvent = line.slice(7).trim();
             } else if (line.startsWith('data: ')) {
@@ -206,19 +216,41 @@ class ApiClient {
                   case 'tool_end':
                     callbacks.onToolEnd?.(parsed.tool);
                     break;
+                  case 'map_ready':
+                    callbacks.onMapReady?.(parsed.chat_id);
+                    break;
                   case 'done':
+                    sawDone = true;
                     callbacks.onDone?.(parsed.reply, parsed.chat_id);
                     break;
                   case 'error':
                     callbacks.onError?.(new Error(parsed.error));
                     break;
                 }
-              } catch { /* skip malformed JSON */ }
+              } catch {
+                /* skip malformed JSON */
+              }
               currentEvent = '';
             }
           }
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            const tail = buffer + decoder.decode();
+            const blocks = tail.split('\n\n').filter(Boolean);
+            blocks.forEach(handleSseBlock);
+            if (!sawDone) {
+              callbacks.onDone?.('', -1);
+            }
+            break;
+          }
+          buffer += decoder.decode(value, { stream: true });
+          const blocks = buffer.split('\n\n');
+          buffer = blocks.pop() || '';
+          blocks.forEach(handleSseBlock);
         }
-        callbacks.onDone?.('', 0);
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -263,6 +295,22 @@ class ApiClient {
   // ── Trips ─────────────────────────────────────────────
   async getTrips() {
     return this.request<TripItem[]>('GET', '/trips/');
+  }
+
+  async getTrip(tripId: number) {
+    return this.request<TripItem>('GET', `/trips/${tripId}`);
+  }
+
+  async replanTripDay(
+    tripId: number,
+    dayNumber: number,
+    body?: { current_datetime_iso?: string; visited_place_names?: string[] },
+  ) {
+    return this.request<TripItem>(
+      'POST',
+      `/trips/${tripId}/days/${dayNumber}/replan`,
+      body ?? {},
+    );
   }
 }
 

@@ -1,13 +1,19 @@
 import { Send } from 'lucide-react';
 
+export interface QuickAction {
+  label: string;
+  onClick: () => void;
+}
+
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
   disabled: boolean;
+  quickActions?: QuickAction[];
 }
 
-export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps) {
+export function ChatInput({ value, onChange, onSend, disabled, quickActions }: ChatInputProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -18,6 +24,20 @@ export function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps)
   return (
     <div className="shrink-0 p-4 sm:p-6 bg-slate-50 dark:bg-black border-t border-slate-200/50 dark:border-slate-800/50">
       <div className="max-w-3xl mx-auto">
+        {quickActions && quickActions.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {quickActions.map((action, idx) => (
+              <button
+                key={idx}
+                onClick={action.onClick}
+                disabled={disabled}
+                className="px-3 py-1.5 text-xs rounded-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-slate-800 hover:border-blue-300 dark:hover:border-blue-700 transition-colors disabled:opacity-50"
+              >
+                {action.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="relative bg-white dark:bg-slate-900 rounded-2xl shadow-lg shadow-slate-200/50 dark:shadow-none border border-slate-200 dark:border-slate-700 flex items-end overflow-hidden focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500 transition-all">
           <textarea
             value={value}

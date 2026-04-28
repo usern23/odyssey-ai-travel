@@ -18,7 +18,7 @@ export function FavoriteCard({ item, index, onRemove }: FavoriteCardProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.1 }}
       className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm hover:shadow-xl dark:hover:shadow-blue-900/10 transition-all group flex flex-col cursor-pointer"
-      onClick={() => navigate('/chat')}
+      onClick={() => navigate('/chat', { state: { chatId: item.chat_id } })}
     >
       <div className="relative bg-gradient-to-br from-blue-500 to-indigo-600 aspect-[4/3] flex items-center justify-center">
         <MapPin size={48} className="text-white/40" />

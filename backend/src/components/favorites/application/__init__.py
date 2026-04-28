@@ -1,2 +1,3 @@
-from src.components.favorites.application.favorites_service import FavoritesService
-__all__ = ['FavoritesService']
+from src.components.favorites.application.FavoritesApplication import FavoritesApplication
+
+__all__ = ['FavoritesApplication']

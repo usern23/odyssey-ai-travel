@@ -22,7 +22,7 @@ const STEPS = [
   'categories',
   'landscape',
   'food',
-  'accommodation',
+  'schedule',
 ] as const;
 
 type Step = (typeof STEPS)[number];
@@ -31,19 +31,19 @@ const ACTIVITY_OPTIONS = [
   {
     value: 'calm',
     label: 'Спокойный',
-    desc: '3–5 мест в день, прогулки без спешки',
+    desc: '4–5 мест в день, прогулки без спешки',
     emoji: '🧘',
   },
   {
     value: 'moderate',
     label: 'Умеренный',
-    desc: '5–8 мест в день, баланс отдыха и впечатлений',
+    desc: '6–8 мест в день, баланс отдыха и впечатлений',
     emoji: '🚶',
   },
   {
     value: 'active',
     label: 'Насыщенный',
-    desc: '8–12 мест в день, максимум впечатлений',
+    desc: '8–10 мест в день, максимум впечатлений',
     emoji: '🏃',
   },
 ];
@@ -100,12 +100,6 @@ const FOOD_OPTIONS = [
   { key: 'street_food', label: 'Уличная еда', emoji: '🌮' },
 ];
 
-const ACCOMMODATION_OPTIONS = [
-  { value: 'hostel', label: 'Хостел', desc: 'Бюджетно и по-молодёжному', emoji: '🏠' },
-  { value: 'hotel', label: 'Отель', desc: 'Комфорт и сервис', emoji: '🏨' },
-  { value: 'apartment', label: 'Апартаменты', desc: 'Как дома, своя кухня', emoji: '🏢' },
-];
-
 interface QuestionnairePageProps {
   editMode?: boolean;
 }
@@ -127,7 +121,8 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
   const [food, setFood] = useState<Record<string, boolean>>({
     vegetarian: false, halal: false, local_cuisine: true, street_food: false,
   });
-  const [accommodation, setAccommodation] = useState<string | null>(null);
+  const [startHour, setStartHour] = useState<number>(10);
+  const [mealCount, setMealCount] = useState<number>(2);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
 
@@ -146,7 +141,8 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
       setCategories(p.category_preferences);
       setLandscape(p.landscape_preferences);
       setFood(p.food_preferences);
-      setAccommodation(p.accommodation_preference);
+      if (typeof p.start_hour === 'number') setStartHour(p.start_hour);
+      if (typeof p.meal_count_per_day === 'number') setMealCount(p.meal_count_per_day);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, [isEdit]);
@@ -160,7 +156,8 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
     category_preferences: categories,
     landscape_preferences: landscape,
     food_preferences: food,
-    accommodation_preference: accommodation || 'hotel',
+    start_hour: startHour,
+    meal_count_per_day: mealCount,
   });
 
   const handleSubmit = async () => {
@@ -298,6 +295,9 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
 
           {currentStep === 'landscape' && (
             <StepContent title="Какая обстановка вам нравится?">
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-1 italic">
+                Используется для подбора направлений поездки
+              </p>
               <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
                 0 — совсем не привлекает, 10 — идеально
               </p>
@@ -327,6 +327,9 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
 
           {currentStep === 'food' && (
             <StepContent title="Предпочтения в еде">
+              <p className="text-xs text-slate-400 dark:text-slate-500 mb-4 italic">
+                Влияет на выбор кафе/ресторанов в плане и на подбор направлений
+              </p>
               <div className="space-y-3">
                 {FOOD_OPTIONS.map(({ key, label, emoji }) => (
                   <button
@@ -347,19 +350,54 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
             </StepContent>
           )}
 
-          {currentStep === 'accommodation' && (
-            <StepContent title="Где предпочитаете останавливаться?">
-              <div className="space-y-3">
-                {ACCOMMODATION_OPTIONS.map((opt) => (
-                  <OptionCard
-                    key={opt.value}
-                    selected={accommodation === opt.value}
-                    onClick={() => setAccommodation(opt.value)}
-                    emoji={opt.emoji}
-                    label={opt.label}
-                    desc={opt.desc}
+          {currentStep === 'schedule' && (
+            <StepContent title="Режим дня">
+              <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                Настройте, когда начинается ваш активный день и сколько раз вые любите есть.
+              </p>
+              <div className="space-y-8">
+                <div>
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-sm font-medium">🌅 Начало дня</span>
+                    <span className="text-lg font-mono font-semibold text-blue-600">
+                      {String(startHour).padStart(2, '0')}:00
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={7}
+                    max={12}
+                    step={1}
+                    value={startHour}
+                    onChange={(e) => setStartHour(Number(e.target.value))}
+                    className="w-full accent-blue-600"
                   />
-                ))}
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                    <span>07:00</span>
+                    <span>12:00</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-baseline justify-between mb-3">
+                    <span className="text-sm font-medium">🍽️ Приёмов пищи в день</span>
+                    <span className="text-lg font-mono font-semibold text-blue-600">{mealCount}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[1, 2, 3].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setMealCount(n)}
+                        className={`px-4 py-3 rounded-xl border text-sm font-medium transition-all ${
+                          mealCount === n
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-500/10 ring-2 ring-blue-500/20'
+                            : 'border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                        }`}
+                      >
+                        {n === 1 ? '1 — обед' : n === 2 ? '2 — обед + ужин' : '3 — завтрак/обед/ужин'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
             </StepContent>
           )}

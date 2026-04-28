@@ -1,3 +1,3 @@
 from __future__ import annotations
-from .manager import ToolsManager
+from .ToolsManager import ToolsManager
 __all__ = ['ToolsManager']

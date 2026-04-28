@@ -6,10 +6,18 @@ import { useAuth } from '@/modules/auth';
 export function Header() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('odyssey_dark');
+      if (saved !== null) return saved === 'true';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    return false;
+  });
   const { isAuthenticated, logout } = useAuth();
 
   useEffect(() => {
+    localStorage.setItem('odyssey_dark', String(isDark));
     if (isDark) {
       document.documentElement.classList.add('dark');
     } else {
@@ -37,6 +45,9 @@ export function Header() {
           </NavLink>
           <NavLink to="/chat" current={location.pathname} icon>
             AI Планировщик
+          </NavLink>
+          <NavLink to="/trips" current={location.pathname}>
+            Мои поездки
           </NavLink>
           <NavLink to="/favorites" current={location.pathname}>
             Сохраненное

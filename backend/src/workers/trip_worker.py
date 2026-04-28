@@ -11,6 +11,8 @@ from src.common.events.rabbitmq import RabbitMQConsumer, QUEUE_TRIP_PROCESSOR, R
 from src.common.events.types import Event, TripDataCollectedEvent, TravelPlanGeneratedEvent
 from src.components.chats.infrastructure.models import Chat
 from src.components.trips.infrastructure.models import Trip
+from src.components.users.infrastructure.models import User  # noqa: F401 — needed for SQLAlchemy relationship resolution
+from src.components.favorites.infrastructure.models.FavoriteModel import Favorite  # noqa: F401
 logger = logging.getLogger(__name__)
 
 

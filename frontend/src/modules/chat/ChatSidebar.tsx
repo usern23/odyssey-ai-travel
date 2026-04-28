@@ -1,4 +1,4 @@
-import { Plus, Clock, Trash2, LogOut, UserCog } from 'lucide-react';
+import { Plus, Clock, Trash2, LogOut, UserCog, Heart, MapPin } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import type { ChatSummary } from '@/shared/api';
 
@@ -24,7 +24,7 @@ export function ChatSidebar({
   const navigate = useNavigate();
 
   return (
-    <aside className="w-80 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A0A0A] hidden lg:flex flex-col">
+    <aside className="w-80 border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A0A0A] flex flex-col h-full">
       {/* New chat button */}
       <div className="p-4 border-b border-slate-200 dark:border-slate-800">
         <button
@@ -71,8 +71,20 @@ export function ChatSidebar({
         )}
       </div>
 
-      {/* Profile & Logout */}
+      {/* Navigation & Profile & Logout */}
       <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-1">
+        <button
+          onClick={() => navigate('/trips')}
+          className="w-full flex items-center justify-center gap-2 py-2.5 text-sm text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-xl transition-colors"
+        >
+          <MapPin size={16} /> Мои поездки
+        </button>
+        <button
+          onClick={() => navigate('/favorites')}
+          className="w-full flex items-center justify-center gap-2 py-2.5 text-sm text-slate-600 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-colors"
+        >
+          <Heart size={16} /> Сохраненное
+        </button>
         <button
           onClick={() => navigate('/questionnaire?edit=true')}
           className="w-full flex items-center justify-center gap-2 py-2.5 text-sm text-slate-600 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-xl transition-colors"

@@ -1,2 +1,2 @@
-from src.components.travel_plan.infrastructure.ors_client import ORSClient, ORSError
+from src.components.travel_plan.infrastructure.clients.OrsClient import ORSClient, ORSError
 __all__ = ['ORSClient', 'ORSError']

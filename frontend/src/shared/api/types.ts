@@ -4,8 +4,8 @@ export interface UserProfile {
   category_preferences: Record<string, number>;
   landscape_preferences: Record<string, number>;
   food_preferences: Record<string, boolean>;
-  walking_preference: string;
-  accommodation_preference: string;
+  start_hour: number;
+  meal_count_per_day: number;
 }
 
 export interface ChatSummary {
@@ -24,6 +24,7 @@ export interface TripSummary {
   destination: string | null;
   start_date: string | null;
   end_date: string | null;
+  has_plan: boolean;
 }
 
 export interface ChatMessage {
@@ -85,6 +86,7 @@ export interface StreamCallbacks {
   onChatCreated?: (chatId: number) => void;
   onToolStart?: (tool: string) => void;
   onToolEnd?: (tool: string) => void;
+  onMapReady?: (chatId: number) => void;
   onDone?: (reply: string, chatId: number) => void;
   onError?: (error: Error) => void;
 }

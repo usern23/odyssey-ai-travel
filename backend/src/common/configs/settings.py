@@ -40,10 +40,19 @@ class Settings(BaseSettings):
             'GEMINI_API_KEY',
             'AITUNNEL_API_KEY'))
     llm_model: Optional[str] = Field(
-        default='gpt-4.1',
+        default='gpt-5.4-nano',
         validation_alias=AliasChoices(
             'LLM_MODEL',
             'GEMINI_MODEL'))
+    # Model used by WebSearchTool for enrichment / fallback / web search.
+    # Defaults to ``llm_model`` so on aitunnel we don't accidentally hit
+    # the expensive gpt-4.1 line. Set to ``gpt-4.1`` only when actual
+    # web_search_preview browsing is required.
+    web_search_model: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices('WEB_SEARCH_MODEL'))
+    llm_generate_titles: bool = True
+    agent_recursion_limit: int = 25
     travelpayouts_token: Optional[str] = Field(
         default=None, validation_alias=AliasChoices(
             'TRAVELPAYOUTS_TOKEN', 'TRAVEL_PAYOUTS_TOKEN'))
@@ -55,6 +64,9 @@ class Settings(BaseSettings):
             'TWOGIS_API_KEY'))
     geocoder_base_url: str = 'https://catalog.api.2gis.com/3.0/items'
     routing_base_url: str = 'https://routing.api.2gis.com/routing/7.0.0/global'
+    google_places_api_key: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices(
+            'GOOGLE_PLACES_API_KEY', 'GOOGLE_MAPS_API_KEY'))
     amadeus_api_key: Optional[str] = Field(
         default=None, validation_alias=AliasChoices(
             'AMADEUS_API_KEY', 'AMADEUS_KEY'))
@@ -66,6 +78,14 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices(
             'ORS_API_KEY', 'OPENROUTESERVICE_API_KEY'))
     ors_base_url: str = 'https://api.openrouteservice.org'
+    openweather_api_key: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices(
+            'OPENWEATHER_API_KEY', 'OPEN_WEATHER_API_KEY'))
+    openweather_base_url: str = 'https://api.openweathermap.org/data/2.5'
+    youtube_api_key: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices(
+            'YOUTUBE_API_KEY', 'YOUTUBE_DATA_API_KEY'))
+    youtube_base_url: str = 'https://www.googleapis.com/youtube/v3'
     rabbitmq_url: str = 'amqp://guest:guest@localhost:5672/'
     yandex_client_id: Optional[str] = None
     yandex_client_secret: Optional[str] = None

@@ -1,16 +1,18 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
 import { api, ApiError, type ChatSummary, type ChatMessage, type StreamCallbacks } from '@/shared/api';
 import { useAuth } from '@/modules/auth';
 import { ChatSidebar } from './ChatSidebar';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { TypingIndicator } from './TypingIndicator';
+import { Heart, Menu, X } from 'lucide-react';
 
 interface DisplayMessage {
   id: string;
   type: 'user' | 'ai';
   content: string;
+  showMap?: boolean;
 }
 
 export default function ChatPage() {
@@ -21,9 +23,15 @@ export default function ChatPage() {
   const [chatList, setChatList] = useState<ChatSummary[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [streamingTool, setStreamingTool] = useState<string | null>(null);
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [currentAiMsgId, setCurrentAiMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const sendingRef = useRef(false);
+  const pendingMapReadyRef = useRef(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated, logout } = useAuth();
 
   useEffect(() => {
@@ -50,13 +58,21 @@ export default function ChatPage() {
 
   const loadChat = useCallback(async (id: number) => {
     setChatId(id);
+    setSidebarOpen(false);
     try {
       const data = await api.getChat(id);
+      setIsFavorited(data.is_favorited ?? false);
       const displayMsgs: DisplayMessage[] = data.messages.map((m: ChatMessage) => ({
         id: String(m.id),
         type: m.role === 'user' ? ('user' as const) : ('ai' as const),
         content: m.content,
       }));
+      // Show map button on last AI message if trip has a plan
+      const trip = data.trip;
+      if (trip && trip.has_plan && displayMsgs.length > 0) {
+        const lastAi = [...displayMsgs].reverse().find(m => m.type === 'ai');
+        if (lastAi) lastAi.showMap = true;
+      }
       setMessages(displayMsgs);
     } catch {
       setMessages([]);
@@ -65,6 +81,8 @@ export default function ChatPage() {
 
   const startNewChat = useCallback(() => {
     setChatId(null);
+    setIsFavorited(false);
+    setSidebarOpen(false);
     setMessages([
       {
         id: 'welcome',
@@ -79,13 +97,25 @@ export default function ChatPage() {
     startNewChat();
   }, [startNewChat]);
 
+  // Open specific chat if navigated from favorites
+  useEffect(() => {
+    const state = location.state as { chatId?: number } | null;
+    if (state?.chatId) {
+      loadChat(state.chatId);
+      // Clear the state so reload doesn't re-open
+      window.history.replaceState({}, '');
+    }
+  }, [location.state, loadChat]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping]);
 
   const handleSend = async () => {
-    if (!inputValue.trim() || isTyping) return;
+    if (!inputValue.trim() || isTyping || sendingRef.current) return;
     const text = inputValue.trim();
+    sendingRef.current = true;
+    pendingMapReadyRef.current = false;
     setInputValue('');
 
     const userMsg: DisplayMessage = { id: `user-${Date.now()}`, type: 'user', content: text };
@@ -94,6 +124,7 @@ export default function ChatPage() {
 
     const aiMsgId = `ai-${Date.now()}`;
     setMessages((prev) => [...prev, { id: aiMsgId, type: 'ai', content: '' }]);
+    setCurrentAiMsgId(aiMsgId);
 
     const callbacks: StreamCallbacks = {
       onChatCreated: (newChatId) => {
@@ -110,7 +141,6 @@ export default function ChatPage() {
         setChatList((prev) =>
           prev.map((c) => (c.id === titleChatId ? { ...c, title } : c)),
         );
-        loadChatList();
       },
       onToolStart: (tool) => {
         setStreamingTool(tool);
@@ -118,13 +148,29 @@ export default function ChatPage() {
       onToolEnd: () => {
         setStreamingTool(null);
       },
+      onMapReady: () => {
+        pendingMapReadyRef.current = true;
+      },
       onDone: () => {
+        const shouldShowMap = pendingMapReadyRef.current;
+        pendingMapReadyRef.current = false;
+        if (shouldShowMap) {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === aiMsgId ? { ...m, showMap: true } : m,
+            ),
+          );
+        }
+        sendingRef.current = false;
         setIsTyping(false);
         setStreamingTool(null);
+        setCurrentAiMsgId(null);
         abortRef.current = null;
         loadChatList();
       },
       onError: (err) => {
+        pendingMapReadyRef.current = false;
+        sendingRef.current = false;
         setIsTyping(false);
         setStreamingTool(null);
         abortRef.current = null;
@@ -169,23 +215,84 @@ export default function ChatPage() {
     navigate('/');
   };
 
+  const toggleFavorite = async () => {
+    if (!chatId) return;
+    try {
+      if (isFavorited) {
+        await api.removeFavorite(chatId);
+        setIsFavorited(false);
+      } else {
+        await api.addFavorite(chatId);
+        setIsFavorited(true);
+      }
+    } catch { /* ignore */ }
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 dark:bg-black overflow-hidden relative">
-      <ChatSidebar
-        chatList={chatList}
-        activeChatId={chatId}
-        loading={loadingHistory}
-        onSelectChat={loadChat}
-        onNewChat={startNewChat}
-        onDeleteChat={handleDeleteChat}
-        onLogout={handleLogout}
-      />
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setSidebarOpen(false)}>
+          <div className="absolute inset-0 bg-black/50" />
+          <div className="relative w-80 h-full" onClick={(e) => e.stopPropagation()}>
+            <ChatSidebar
+              chatList={chatList}
+              activeChatId={chatId}
+              loading={loadingHistory}
+              onSelectChat={loadChat}
+              onNewChat={startNewChat}
+              onDeleteChat={handleDeleteChat}
+              onLogout={handleLogout}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Desktop sidebar */}
+      <div className="hidden lg:block">
+        <ChatSidebar
+          chatList={chatList}
+          activeChatId={chatId}
+          loading={loadingHistory}
+          onSelectChat={loadChat}
+          onNewChat={startNewChat}
+          onDeleteChat={handleDeleteChat}
+          onLogout={handleLogout}
+        />
+      </div>
 
       <main className="flex-1 flex flex-col w-full h-full min-h-0">
+        {/* Chat header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0A0A0A]">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+          >
+            <Menu size={20} />
+          </button>
+          <div className="flex-1 text-center text-sm font-medium text-slate-700 dark:text-slate-300 truncate px-4">
+            {chatId ? chatList.find((c) => c.id === chatId)?.title || 'Чат' : 'Новый чат'}
+          </div>
+          {chatId && (
+            <button
+              onClick={toggleFavorite}
+              className={`p-2 rounded-lg transition-colors ${
+                isFavorited
+                  ? 'text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10'
+                  : 'text-slate-400 hover:text-red-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={isFavorited ? 'Убрать из избранного' : 'Добавить в избранное'}
+            >
+              <Heart size={20} fill={isFavorited ? 'currentColor' : 'none'} />
+            </button>
+          )}
+          {!chatId && <div className="w-9" />}
+        </div>
+
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="max-w-3xl mx-auto space-y-6">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} type={msg.type} content={msg.content} />
+              <MessageBubble key={msg.id} type={msg.type} content={msg.content} showMap={msg.showMap} chatId={chatId} />
             ))}
             {isTyping && streamingTool && (
               <div className="text-sm text-slate-500 dark:text-slate-400 italic px-4">
@@ -202,6 +309,18 @@ export default function ChatPage() {
           onChange={setInputValue}
           onSend={handleSend}
           disabled={isTyping}
+          quickActions={chatId ? [
+            {
+              label: '🔄 Перепланировать день',
+              onClick: () => {
+                const now = new Date();
+                const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                setInputValue(
+                  `Сейчас ${hhmm}. Перепланируй оставшуюся часть сегодняшнего дня с учётом погоды и того, что ещё открыто.`,
+                );
+              },
+            },
+          ] : []}
         />
       </main>
     </div>

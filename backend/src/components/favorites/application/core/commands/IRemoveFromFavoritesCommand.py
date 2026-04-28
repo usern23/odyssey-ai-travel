@@ -1,0 +1,7 @@
+from abc import ABC, abstractmethod
+
+
+class IRemoveFromFavoritesCommand(ABC):
+    @abstractmethod
+    async def __call__(self, user_id: int, chat_id: int) -> bool:
+        ...

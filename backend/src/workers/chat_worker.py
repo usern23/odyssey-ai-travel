@@ -7,6 +7,9 @@ from src.common.configs.settings import settings
 from src.common.events.rabbitmq import RabbitMQConsumer, QUEUE_CHAT_PROCESSOR, ROUTING_KEY_CHAT_MESSAGE_SAVED, ROUTING_KEY_CHAT_TITLE_UPDATED
 from src.common.events.types import ChatTitleUpdateEvent, Event, MessageSavedEvent
 from src.components.chats.infrastructure.models import Chat, ChatMessage, MessageRole
+from src.components.users.infrastructure.models import User  # noqa: F401
+from src.components.trips.infrastructure.models import Trip  # noqa: F401
+from src.components.favorites.infrastructure.models.FavoriteModel import Favorite  # noqa: F401
 logger = logging.getLogger(__name__)
 
 
