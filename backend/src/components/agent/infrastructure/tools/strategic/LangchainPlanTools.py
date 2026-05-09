@@ -30,6 +30,9 @@ class GenerateTravelPlanInput(BaseModel):
     target_places_per_day: Optional[int] = Field(
         default=None,
         description='Желаемое количество мест в день (например 10 для активного темпа)')
+    end_hour: Optional[int] = Field(
+        default=None,
+        description='Час окончания активного дня (по умолчанию 22). Берётся из plan_end_hour TRIP CONTEXT, если задан пользователем в ручном билдере.')
 
 
 class AddPlaceInput(BaseModel):
@@ -74,10 +77,10 @@ class GenerateTravelPlanTool(BaseTool):
 
     async def _load_user_profile(
         self, user_id: int,
-    ) -> tuple[float, float, dict[str, float] | None, int | None, int, int, dict[str, bool], Optional[str]]:
-        """Load hours, b_max, user_preferences, places_per_day, start_hour, meal_count, food_prefs, pace."""
+    ) -> tuple[float, float, dict[str, float] | None, int | None, int, int, int, dict[str, bool], Optional[str]]:
+        """Load hours, b_max, user_preferences, places_per_day, start_hour, end_hour, meal_count, food_prefs, pace."""
         if not self.db_session:
-            return 8.0, float('inf'), None, None, 10, 2, {}, None
+            return 8.0, float('inf'), None, None, 10, 22, 2, {}, None
         try:
             from sqlalchemy import select
             from src.components.users.infrastructure.models import UserProfile
@@ -85,7 +88,7 @@ class GenerateTravelPlanTool(BaseTool):
                 select(UserProfile).where(UserProfile.user_id == user_id))
             profile = result.scalar_one_or_none()
             if not profile:
-                return 8.0, float('inf'), None, None, 10, 2, {}, None
+                return 8.0, float('inf'), None, None, 10, 22, 2, {}, None
             pace_value: Optional[str] = None
             try:
                 level = profile.activity_level
@@ -98,13 +101,14 @@ class GenerateTravelPlanTool(BaseTool):
                 profile.get_sa_user_preferences(),
                 profile.get_places_per_day(),
                 int(profile.start_hour or 10),
+                int(profile.get_effective_end_hour()),
                 int(profile.meal_count_per_day or 2),
                 dict(profile.food_preferences or {}),
                 pace_value,
             )
         except Exception as e:
             logger.warning(f'Failed to load user profile for plan: {e}')
-            return 8.0, float('inf'), None, None, 10, 2, {}, None
+            return 8.0, float('inf'), None, None, 10, 22, 2, {}, None
 
     def _run(self, **kwargs) -> str:
         return asyncio.run(self._arun(**kwargs))
@@ -120,20 +124,22 @@ class GenerateTravelPlanTool(BaseTool):
             start_date: str,
             num_days: int,
             hours_per_day: float = 8.0,
-            target_places_per_day: Optional[int] = None) -> str:
-        profile_hours, b_max, user_prefs, profile_places, start_hour, meal_count, food_prefs, pace = await self._load_user_profile(user_id)
+            target_places_per_day: Optional[int] = None,
+            end_hour: Optional[int] = None) -> str:
+        profile_hours, b_max, user_prefs, profile_places, start_hour, profile_end_hour, meal_count, food_prefs, pace = await self._load_user_profile(user_id)
         effective_hours = profile_hours if hours_per_day == 8.0 else hours_per_day
-        # Tempo (places/day) comes from the user profile by default;
-        # explicit tool argument overrides it only when provided.
-        # When `pace` is known we leave the computation to TravelPlanService
-        # (deterministic via compute_points_per_day) by passing
-        # target_places_per_day=None.
+        # Tempo (places/day): trust the user's explicit profile target
+        # (calm=5, moderate=8, active=10) when it's available. The
+        # service-side ``compute_points_per_day`` formula stays as a
+        # fallback only — it tends to undershoot the profile (e.g. 5
+        # for moderate at 10:00–22:00) which surprises the user who
+        # explicitly asked for a comfortable tempo.
         if target_places_per_day is not None:
             effective_target = target_places_per_day
-        elif pace:
-            effective_target = None
-        else:
+        elif profile_places:
             effective_target = profile_places
+        else:
+            effective_target = None  # service falls back to formula
         result = await self.travel_planner.generate_travel_plan(
             chat_id=self.chat_id, destination=destination,
             places_json=places_json, hotel_name=hotel_name,
@@ -143,6 +149,7 @@ class GenerateTravelPlanTool(BaseTool):
             user_preferences=user_prefs,
             target_places_per_day=effective_target,
             start_hour=start_hour,
+            end_hour=int(end_hour) if end_hour is not None else profile_end_hour,
             meal_count_per_day=meal_count,
             food_preferences=food_prefs,
             pace=pace,
@@ -305,6 +312,167 @@ class ShowRouteMapTool(BaseTool):
             return f"❌ Ошибка при генерации карты: {e}"
 
 
+class SetTripHotelInput(BaseModel):
+    hotel_name: str = Field(
+        description='Название отеля или адрес проживания, как пользователь его назвал')
+    address: Optional[str] = Field(
+        default=None,
+        description='Полный адрес отеля, если он отличается от hotel_name (улица, дом, район)')
+
+
+class SetTripHotelTool(BaseTool):
+    """Persist user's chosen accommodation into the chat's trip.
+
+    The agent calls this whenever the user mentions where they plan to
+    stay (hotel name or address). The hotel is geocoded once, stored
+    inside ``trip.generated_plan`` (preserving the manual-builder
+    ``plan_data`` wrapping when present) and becomes visible on the
+    next agent turn via ``plan_hotel_*`` context fields — so the agent
+    no longer asks about accommodation again.
+    """
+
+    name: str = 'set_trip_hotel'
+    description: str = (
+        'Сохраняет отель/место проживания в текущую поездку.\n\n'
+        'КОГДА ИСПОЛЬЗОВАТЬ:\n'
+        '- Пользователь назвал отель/адрес проживания в чате '
+        '(даже если план ещё не строится)\n'
+        '- В TRIP CONTEXT нет plan_hotel_name, либо пользователь хочет '
+        'сменить место проживания\n\n'
+        'ЧТО ДЕЛАЕТ:\n'
+        '- Геокодирует адрес с учётом города поездки\n'
+        '- Записывает hotel в trip.generated_plan, чтобы информация '
+        'сохранилась между сообщениями\n\n'
+        'ПОСЛЕ ВЫЗОВА: больше НЕ спрашивай у пользователя про отель.'
+    )
+    args_schema: Type[BaseModel] = SetTripHotelInput
+    travel_planner: TravelPlannerTool = Field(exclude=True)
+    chat_id: int = Field(exclude=True)
+    db_session: Any = Field(default=None, exclude=True)
+
+    class Config:
+        arbitrary_types_allowed = True
+
+    def _run(self, **kwargs) -> str:
+        return asyncio.run(self._arun(**kwargs))
+
+    async def _arun(
+            self,
+            hotel_name: str,
+            address: Optional[str] = None) -> str:
+        if not self.db_session:
+            return '❌ Внутренняя ошибка: нет сессии БД для записи отеля.'
+        try:
+            from sqlalchemy import select
+            from src.components.chats.infrastructure.models import Chat
+            result = await self.db_session.execute(
+                select(Chat).where(Chat.id == self.chat_id))
+            chat = result.scalar_one_or_none()
+            if not chat or not chat.trip_id:
+                return ('❌ Чат пока не привязан к поездке. Сначала '
+                        'вызовите collect_trip_data, потом сохраните отель.')
+            from src.components.trips.infrastructure.models.TripModel import Trip
+            trip_result = await self.db_session.execute(
+                select(Trip).where(Trip.id == chat.trip_id))
+            trip = trip_result.scalar_one_or_none()
+            if not trip:
+                return '❌ Поездка не найдена.'
+
+            city = (trip.destination or '').strip() or None
+            geo_query = (address or hotel_name).strip()
+            geo = await self.travel_planner.geocode_address(geo_query, city)
+            if not geo.get('success'):
+                return (
+                    f"❌ Не удалось определить координаты для '{geo_query}'"
+                    + (f' в городе {city}' if city else '')
+                    + '. Попросите пользователя уточнить адрес.'
+                )
+            lat = float(geo['lat'])
+            lon = float(geo['lon'])
+            resolved_address = geo.get('address') or address or hotel_name
+
+            # Preserve the storage shape: manual builder uses a
+            # ``{plan_data: {...}, version, source}`` wrapper, plain
+            # chat trips store the inner dict directly. We mirror
+            # whichever format is already on disk and create a manual
+            # wrapper if the plan is empty.
+            existing = dict(trip.generated_plan or {})
+            wrapped = isinstance(existing.get('plan_data'), dict)
+            if wrapped:
+                inner = dict(existing['plan_data'])
+            elif existing:
+                inner = existing
+            else:
+                inner = {}
+
+            hotel_dict = {
+                'name': hotel_name,
+                'lat': lat,
+                'lon': lon,
+                'address': resolved_address,
+                'category': 'hotel',
+                'visit_duration_min': 0,
+                'source': 'chat',
+            }
+            inner['hotel'] = hotel_dict
+            if not inner.get('destination') and city:
+                inner['destination'] = city
+
+            if wrapped or not existing:
+                outer = dict(existing) if wrapped else {}
+                outer['plan_data'] = inner
+                outer.setdefault('source', 'manual')
+                try:
+                    outer['version'] = int(outer.get('version') or 0) + 1
+                except Exception:
+                    outer['version'] = 1
+                trip.generated_plan = outer
+            else:
+                trip.generated_plan = inner
+
+            # SQLAlchemy doesn't auto-detect mutations on JSONB dicts
+            # unless the column is mapped as Mutable; mark dirty to be safe.
+            try:
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(trip, 'generated_plan')
+            except Exception:
+                pass
+            await self.db_session.commit()
+
+            # Refresh the in-memory plan cache so any subsequent
+            # planner tool call sees the new hotel.
+            cached = self.travel_planner._current_plans.get(self.chat_id)
+            if cached is not None:
+                try:
+                    from src.components.travel_plan.domain.TravelPlanEntities import Place, PlaceCategory
+                    cached.hotel = Place(
+                        name=hotel_name,
+                        lat=lat,
+                        lon=lon,
+                        category=PlaceCategory.HOTEL,
+                        visit_duration_min=0,
+                        address=resolved_address,
+                        description=resolved_address,
+                        source='chat',
+                    )
+                except Exception as e:
+                    logger.debug(f'Could not update cached plan hotel: {e}')
+
+            return (
+                f"✅ Отель сохранён в поездку: {hotel_name}"
+                + (f" ({resolved_address})" if resolved_address and resolved_address != hotel_name else '')
+                + f". Координаты: lat={lat}, lon={lon}."
+                + ' Используй эти координаты в generate_travel_plan и больше не уточняй место проживания у пользователя.'
+            )
+        except Exception as e:
+            logger.error(f'set_trip_hotel failed: {e}', exc_info=True)
+            try:
+                await self.db_session.rollback()
+            except Exception:
+                pass
+            return f'❌ Не удалось сохранить отель: {e}'
+
+
 class ReplanDayInput(BaseModel):
     day_number: int = Field(
         description='Номер дня в плане путешествия, который нужно перепланировать (начиная с 1)')
@@ -374,4 +542,6 @@ def create_travel_plan_tools(
                         travel_planner=travel_planner, chat_id=chat_id), GeocodeTool(
                         travel_planner=travel_planner), ShowRouteMapTool(
                             travel_planner=travel_planner, chat_id=chat_id),
+        SetTripHotelTool(
+            travel_planner=travel_planner, chat_id=chat_id, db_session=db_session),
         ReplanDayTool(travel_planner=travel_planner, chat_id=chat_id)]

@@ -24,6 +24,7 @@ export default function ChatPage() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [streamingTool, setStreamingTool] = useState<string | null>(null);
   const [isFavorited, setIsFavorited] = useState(false);
+  const [currentTripId, setCurrentTripId] = useState<number | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentAiMsgId, setCurrentAiMsgId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,7 @@ export default function ChatPage() {
     try {
       const data = await api.getChat(id);
       setIsFavorited(data.is_favorited ?? false);
+      setCurrentTripId(data.trip?.id ?? null);
       const displayMsgs: DisplayMessage[] = data.messages.map((m: ChatMessage) => ({
         id: String(m.id),
         type: m.role === 'user' ? ('user' as const) : ('ai' as const),
@@ -82,6 +84,7 @@ export default function ChatPage() {
   const startNewChat = useCallback(() => {
     setChatId(null);
     setIsFavorited(false);
+    setCurrentTripId(null);
     setSidebarOpen(false);
     setMessages([
       {
@@ -97,15 +100,26 @@ export default function ChatPage() {
     startNewChat();
   }, [startNewChat]);
 
-  // Open specific chat if navigated from favorites
+  // Open specific chat if navigated from favorites (state.chatId)
+  // or from TripBuilderPage "Спросить ИИ" (?chat=<id>).
   useEffect(() => {
     const state = location.state as { chatId?: number } | null;
     if (state?.chatId) {
       loadChat(state.chatId);
-      // Clear the state so reload doesn't re-open
       window.history.replaceState({}, '');
+      return;
     }
-  }, [location.state, loadChat]);
+    const params = new URLSearchParams(location.search);
+    const qsChat = params.get('chat');
+    if (qsChat) {
+      const id = Number(qsChat);
+      if (Number.isFinite(id) && id > 0) {
+        loadChat(id);
+        // Clean URL so refresh stays on the chat without re-triggering.
+        navigate('/chat', { replace: true });
+      }
+    }
+  }, [location.state, location.search, loadChat, navigate]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -216,13 +230,13 @@ export default function ChatPage() {
   };
 
   const toggleFavorite = async () => {
-    if (!chatId) return;
+    if (!currentTripId) return;
     try {
       if (isFavorited) {
-        await api.removeFavorite(chatId);
+        await api.removeFavorite(currentTripId);
         setIsFavorited(false);
       } else {
-        await api.addFavorite(chatId);
+        await api.addFavorite(currentTripId);
         setIsFavorited(true);
       }
     } catch { /* ignore */ }
@@ -273,7 +287,7 @@ export default function ChatPage() {
           <div className="flex-1 text-center text-sm font-medium text-slate-700 dark:text-slate-300 truncate px-4">
             {chatId ? chatList.find((c) => c.id === chatId)?.title || 'Чат' : 'Новый чат'}
           </div>
-          {chatId && (
+          {chatId && currentTripId ? (
             <button
               onClick={toggleFavorite}
               className={`p-2 rounded-lg transition-colors ${
@@ -285,8 +299,9 @@ export default function ChatPage() {
             >
               <Heart size={20} fill={isFavorited ? 'currentColor' : 'none'} />
             </button>
+          ) : (
+            <div className="w-9" />
           )}
-          {!chatId && <div className="w-9" />}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">

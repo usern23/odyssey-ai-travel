@@ -6,6 +6,7 @@ from src.components.trips.application.core.commands import (
     ICreateTripCommand,
     IUpdateTripCommand,
     IUpdateGeneratedPlanCommand,
+    IDeleteTripCommand,
 )
 from src.components.trips.application.core.queries import (
     IGetTripQuery,
@@ -15,6 +16,7 @@ from src.components.trips.application.impl.commands import (
     CreateTripCommand,
     UpdateTripCommand,
     UpdateGeneratedPlanCommand,
+    DeleteTripCommand,
 )
 from src.components.trips.application.impl.queries import (
     GetTripQuery,
@@ -30,6 +32,7 @@ class TripsApplication:
         provider.provide(CreateTripCommand, provides=ICreateTripCommand)
         provider.provide(UpdateTripCommand, provides=IUpdateTripCommand)
         provider.provide(UpdateGeneratedPlanCommand, provides=IUpdateGeneratedPlanCommand)
+        provider.provide(DeleteTripCommand, provides=IDeleteTripCommand)
 
         provider.provide(GetTripQuery, provides=IGetTripQuery)
         provider.provide(ListUserTripsQuery, provides=IListUserTripsQuery)

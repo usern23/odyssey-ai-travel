@@ -38,7 +38,16 @@ class GetRouteMapView:
         if not trip or not trip.generated_plan:
             raise HTTPException(status_code=404, detail='No travel plan found')
         try:
-            plan = TravelPlan.from_dict(trip.generated_plan)
+            raw_plan = trip.generated_plan or {}
+            # Manual-builder trips wrap the plan in {"plan_data": {...},
+            # "version": N, ...}. Auto-trips store the plan flat. Unwrap
+            # so TravelPlan.from_dict (which expects flat keys) works
+            # for both formats.
+            if isinstance(raw_plan, dict) and 'plan_data' in raw_plan and isinstance(raw_plan['plan_data'], dict):
+                flat_plan = raw_plan['plan_data']
+            else:
+                flat_plan = raw_plan
+            plan = TravelPlan.from_dict(flat_plan)
             html = generate_route_map(plan)
             return HTMLResponse(content=html, headers=_NO_CACHE_HEADERS)
         except Exception as e:

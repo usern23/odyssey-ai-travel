@@ -27,6 +27,12 @@ class TravelPlannerTool:
         self._db_session = db_session
 
     async def _persist_plan(self, chat_id: int, plan: TravelPlan) -> None:
+        # Bump optimistic-locking version on every persist so concurrent
+        # manual edits via REST can detect stale state and 409.
+        try:
+            plan.version = int(getattr(plan, 'version', 1) or 1) + 1
+        except Exception:
+            plan.version = 2
         self._current_plans[chat_id] = plan
         # Сбрасываем кэш карты, чтобы при следующем запросе фронтенд получил
         # свежий HTML с обновлёнными маркерами/днями.
@@ -73,6 +79,7 @@ class TravelPlannerTool:
                                    user_preferences: Optional[Dict[str, float]] = None,
                                    target_places_per_day: Optional[int] = None,
                                    start_hour: int = 10,
+                                   end_hour: int = 22,
                                    meal_count_per_day: int = 2,
                                    food_preferences: Optional[Dict[str, bool]] = None,
                                    pace: Optional[str] = None) -> Dict[str,
@@ -139,6 +146,7 @@ class TravelPlannerTool:
                 user_preferences=user_preferences,
                 min_places_per_day=target_places_per_day,
                 start_hour=start_hour,
+                end_hour=end_hour,
                 meal_count_per_day=meal_count_per_day,
                 food_preferences=food_preferences,
                 category_modifiers=category_modifiers,

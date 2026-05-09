@@ -10,10 +10,10 @@ class RemoveFavoriteView:
     @inject
     async def __call__(
             self,
-            chat_id: int,
+            trip_id: int,
             remove_command: FromDishka[IRemoveFromFavoritesCommand],
             current_user: User = Depends(get_current_user)):
-        removed = await remove_command(user_id=current_user.id, chat_id=chat_id)
+        removed = await remove_command(user_id=current_user.id, trip_id=trip_id)
         if not removed:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

@@ -6,8 +6,8 @@ from pydantic import BaseModel
 
 class FavoriteResponse(BaseModel):
     id: int
-    chat_id: int
-    chat_title: str
+    trip_id: int
+    trip_name: str
     custom_name: Optional[str] = None
     destination: Optional[str] = None
     created_at: datetime

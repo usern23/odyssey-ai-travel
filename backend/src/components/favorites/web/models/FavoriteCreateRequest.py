@@ -4,5 +4,5 @@ from pydantic import BaseModel, Field
 
 
 class FavoriteCreateRequest(BaseModel):
-    chat_id: int
+    trip_id: int
     custom_name: Optional[str] = Field(None, max_length=255)

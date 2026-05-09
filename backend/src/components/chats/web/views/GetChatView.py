@@ -20,7 +20,7 @@ class GetChatView:
         chat = await get_chat_with_messages(chat_id, current_user.id)
         if not chat:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Chat not found')
-        is_favorited = await is_favorited_query(current_user.id, chat_id)
+        is_favorited = await is_favorited_query(current_user.id, chat.trip_id) if chat.trip_id else False
         return ChatWithMessagesResponse(
             id=chat.id,
             title=chat.title,

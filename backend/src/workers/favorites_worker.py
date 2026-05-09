@@ -53,19 +53,19 @@ class FavoritesWorker(RabbitMQConsumer):
         existing = await session.execute(
             select(Favorite).where(
                 Favorite.user_id == event.user_id,
-                Favorite.chat_id == event.chat_id))
+                Favorite.trip_id == event.trip_id))
         if existing.scalar_one_or_none():
             logger.info(
-                'Favorite already exists: user=%d, chat=%d',
-                event.user_id, event.chat_id)
+                'Favorite already exists: user=%d, trip=%d',
+                event.user_id, event.trip_id)
             return
         favorite = Favorite(
-            user_id=event.user_id, chat_id=event.chat_id)
+            user_id=event.user_id, trip_id=event.trip_id)
         session.add(favorite)
         await session.commit()
         logger.info(
-            'Added favorite: user=%d, chat=%d',
-            event.user_id, event.chat_id)
+            'Added favorite: user=%d, trip=%d',
+            event.user_id, event.trip_id)
 
 
 async def main():

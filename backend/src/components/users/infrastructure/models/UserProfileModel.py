@@ -70,6 +70,8 @@ class UserProfile(Base):
         JSONB, default=dict, nullable=False)
     start_hour: Mapped[int] = mapped_column(
         Integer, nullable=False, default=10, server_default='10')
+    end_hour: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, default=None)
     meal_count_per_day: Mapped[int] = mapped_column(
         Integer, nullable=False, default=2, server_default='2')
     updated_at: Mapped[Optional[datetime]] = mapped_column(
@@ -84,6 +86,16 @@ class UserProfile(Base):
         return ACTIVITY_LEVEL_PARAMS.get(
             self.activity_level, ACTIVITY_LEVEL_PARAMS[ActivityLevel.MODERATE]
         )['hours_per_day']
+
+    def get_effective_end_hour(self) -> int:
+        """Конец активного дня. Если задан явно — используется он;
+        иначе вычисляется как start_hour + hours_per_day(activity_level),
+        но не позже 23:00.
+        """
+        if self.end_hour is not None:
+            return int(self.end_hour)
+        derived = int(self.start_hour) + int(self.get_hours_per_day())
+        return min(derived, 23)
 
     def get_places_per_day(self) -> int:
         return ACTIVITY_LEVEL_PARAMS.get(

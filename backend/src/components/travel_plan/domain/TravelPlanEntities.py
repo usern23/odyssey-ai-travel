@@ -174,6 +174,15 @@ class Activity:
     travel_time_from_prev_min: int = 0
     travel_distance_from_prev_km: float = 0.0
     notes: Optional[str] = None
+    # ── Manual-builder fields (back-compat: optional/defaulted) ──────
+    # User-authored note that is shown in the UI under the place card.
+    note: Optional[str] = None
+    # Actual cost paid for this stop (used by budget tracker). ``None``
+    # means "unknown" — falls back to the place's price_level estimate.
+    actual_cost: Optional[float] = None
+    # When True, the optimiser/replanner must keep this activity at its
+    # current position (it is a "locked anchor" set by the user).
+    is_locked: bool = False
 
     @property
     def duration_min(self) -> int:
@@ -188,17 +197,24 @@ class Activity:
             'end_time': self.end_time.isoformat(),
             'travel_time_from_prev_min': self.travel_time_from_prev_min,
             'travel_distance_from_prev_km': self.travel_distance_from_prev_km,
-            'notes': self.notes}
+            'notes': self.notes,
+            'note': self.note,
+            'actual_cost': self.actual_cost,
+            'is_locked': self.is_locked}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Activity':
         return cls(
-            place=Place.from_dict(
-                data['place']), start_time=time.fromisoformat(
-                data['start_time']), end_time=time.fromisoformat(
-                data['end_time']), travel_time_from_prev_min=data.get(
-                    'travel_time_from_prev_min', 0), travel_distance_from_prev_km=data.get(
-                        'travel_distance_from_prev_km', 0.0), notes=data.get('notes'))
+            place=Place.from_dict(data['place']),
+            start_time=time.fromisoformat(data['start_time']),
+            end_time=time.fromisoformat(data['end_time']),
+            travel_time_from_prev_min=data.get('travel_time_from_prev_min', 0),
+            travel_distance_from_prev_km=data.get('travel_distance_from_prev_km', 0.0),
+            notes=data.get('notes'),
+            note=data.get('note'),
+            actual_cost=data.get('actual_cost'),
+            is_locked=bool(data.get('is_locked', False)),
+        )
 
 
 @dataclass
@@ -210,6 +226,9 @@ class DayPlan:
     total_distance_km: float = 0.0
     total_travel_time_min: int = 0
     total_visit_time_min: int = 0
+    # User-authored title for the day (e.g. "Old town walking tour"),
+    # rendered in the UI and Markdown summary. Optional/back-compat.
+    heading: Optional[str] = None
 
     @property
     def start_time(self) -> Optional[time]:
@@ -232,18 +251,23 @@ class DayPlan:
             'route_geometry': self.route_geometry,
             'total_distance_km': self.total_distance_km,
             'total_travel_time_min': self.total_travel_time_min,
-            'total_visit_time_min': self.total_visit_time_min}
+            'total_visit_time_min': self.total_visit_time_min,
+            'heading': self.heading}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'DayPlan':
         return cls(
-            day_number=data['day_number'], date=date.fromisoformat(
-                data['date']), activities=[
-                Activity.from_dict(a) for a in data.get(
-                    'activities', [])], route_geometry=data.get('route_geometry'), total_distance_km=data.get(
-                    'total_distance_km', 0.0), total_travel_time_min=data.get(
-                        'total_travel_time_min', 0), total_visit_time_min=data.get(
-                            'total_visit_time_min', 0))
+            day_number=data['day_number'],
+            date=date.fromisoformat(data['date']),
+            activities=[
+                Activity.from_dict(a) for a in data.get('activities', [])
+            ],
+            route_geometry=data.get('route_geometry'),
+            total_distance_km=data.get('total_distance_km', 0.0),
+            total_travel_time_min=data.get('total_travel_time_min', 0),
+            total_visit_time_min=data.get('total_visit_time_min', 0),
+            heading=data.get('heading'),
+        )
 
     def to_markdown(self) -> str:
         """Render a single day as Markdown.
@@ -319,6 +343,7 @@ class TravelPlan:
     food_preferences: Optional[Dict[str, bool]] = None
     hours_per_day: float = 8.0
     start_hour: int = 10
+    end_hour: int = 22
     meal_count_per_day: int = 2
     # Structured warnings collected during plan generation. Each note is
     # ``{'type': str, 'severity': 'info'|'warn'|'error', 'message': str,
@@ -326,6 +351,27 @@ class TravelPlan:
     # can transparently explain compromises (understaffed days, overflow,
     # weather conflicts, etc.).
     plan_notes: List[Dict[str, Any]] = field(default_factory=list)
+    # ── Manual-builder fields (back-compat: optional/defaulted) ──────
+    # Optimistic-locking version, incremented on every persist. Clients
+    # send the version they last saw; mismatches cause a 409 Conflict.
+    version: int = 1
+    # Pool of saved-but-not-scheduled places (Wanderlog "wishlist"). Can
+    # be promoted into a specific day via the manual-edit endpoints.
+    wishlist: List[Place] = field(default_factory=list)
+    # Budget tracking. ``budget_total`` is the ceiling for the whole
+    # trip; ``budget_by_category`` allows per-category caps (e.g.
+    # food/transport/attractions). All values in trip currency.
+    budget_total: Optional[float] = None
+    budget_by_category: Dict[str, float] = field(default_factory=dict)
+    budget_currency: str = 'RUB'
+    # Big upfront fixed costs that aren't tied to a single place — user
+    # enters them in the budget panel; they're added to "spent" in the UI.
+    lodging_total: Optional[float] = None
+    transport_total: Optional[float] = None
+    # Provenance: how the plan was authored. ``'agent'`` — generated by
+    # the AI agent; ``'manual'`` — built from scratch in the UI; ``'mixed'``
+    # — originally agent-generated but later edited manually.
+    source: str = 'agent'
 
     def __post_init__(self):
         self._recalculate_stats()
@@ -380,8 +426,17 @@ class TravelPlan:
             'food_preferences': self.food_preferences,
             'hours_per_day': self.hours_per_day,
             'start_hour': self.start_hour,
+            'end_hour': self.end_hour,
             'meal_count_per_day': self.meal_count_per_day,
-            'plan_notes': list(self.plan_notes)}
+            'plan_notes': list(self.plan_notes),
+            'version': self.version,
+            'wishlist': [p.to_dict() for p in self.wishlist],
+            'budget_total': self.budget_total,
+            'budget_by_category': dict(self.budget_by_category),
+            'budget_currency': self.budget_currency,
+            'lodging_total': self.lodging_total,
+            'transport_total': self.transport_total,
+            'source': self.source}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TravelPlan':
@@ -400,8 +455,19 @@ class TravelPlan:
             food_preferences=data.get('food_preferences'),
             hours_per_day=float(data.get('hours_per_day', 8.0)),
             start_hour=int(data.get('start_hour', 10)),
+            end_hour=int(data.get('end_hour', 22)),
             meal_count_per_day=int(data.get('meal_count_per_day', 2)),
             plan_notes=list(data.get('plan_notes') or []),
+            version=int(data.get('version', 1)),
+            wishlist=[
+                Place.from_dict(p) for p in data.get('wishlist', [])
+            ],
+            budget_total=data.get('budget_total'),
+            budget_by_category=dict(data.get('budget_by_category') or {}),
+            budget_currency=str(data.get('budget_currency') or 'RUB'),
+            lodging_total=data.get('lodging_total'),
+            transport_total=data.get('transport_total'),
+            source=str(data.get('source') or 'agent'),
         )
         return plan
 

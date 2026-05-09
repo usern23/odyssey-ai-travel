@@ -14,5 +14,6 @@ class UserProfileResponse(BaseModel):
     landscape_preferences: Dict[str, int]
     food_preferences: Dict[str, bool]
     start_hour: int = 10
+    end_hour: Optional[int] = None
     meal_count_per_day: int = 2
     updated_at: Optional[datetime] = None

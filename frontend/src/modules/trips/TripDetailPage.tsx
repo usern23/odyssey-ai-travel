@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ArrowLeft, MapPin, Clock, Footprints, Calendar, Star, RefreshCw } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, Footprints, Calendar, Star, RefreshCw, Pencil, Trash2 } from 'lucide-react';
 import { api, ApiError, type TripItem } from '@/shared/api';
 import { useAuth } from '@/modules/auth';
 
@@ -123,9 +123,13 @@ function buildTwogisHtml(data: ReturnType<typeof collectMapData>): string {
 
   for (const d of days) {
     for (const m of d.markers) {
-      markersJs += `(function(){var mk=new mapgl.HtmlMarker(map,{coordinates:[${m.lon},${m.lat}],html:'<div style="background:${d.color};color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3);cursor:pointer">${m.num}</div>'});mk.getElement().addEventListener("click",function(){showPopup([${m.lon},${m.lat}],'${m.popup.replace(/'/g,"&#39;")}')})})();`;
+      // 2GIS HtmlMarker: in current API, click bindings via on()/getElement()
+      // are unavailable. Render static markers only — popups disabled here.
+      // (Markers/polylines are wrapped in try/catch so a single failure
+      // doesn't break the rest of the route render.)
+      markersJs += `try{new mapgl.HtmlMarker(map,{coordinates:[${m.lon},${m.lat}],html:'<div style="background:${d.color};color:#fff;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.3)">${m.num}</div>'});}catch(e){console.warn('marker err',e);}`;
     }
-    polylinesJs += `new mapgl.Polyline(map,{coordinates:${JSON.stringify(d.coords)},width:4,color:'${d.color}'});`;
+    polylinesJs += `try{new mapgl.Polyline(map,{coordinates:${JSON.stringify(d.coords)},width:4,color:'${d.color}'});}catch(e){console.warn('polyline err',e);}`;
   }
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -325,7 +329,33 @@ export default function TripDetailPage() {
           <button onClick={() => navigate('/trips')} className="flex items-center gap-1 text-white/70 hover:text-white mb-4 text-sm">
             <ArrowLeft size={16} /> Мои поездки
           </button>
-          <h1 className="text-3xl font-bold mb-2">{trip.name}</h1>
+          <div className="flex items-center justify-between gap-3 mb-2">
+            <h1 className="text-3xl font-bold">{trip.name}</h1>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate(`/trips/${trip.id}/edit`)}
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/30 backdrop-blur-sm whitespace-nowrap"
+              >
+                <Pencil size={14} /> Редактировать вручную
+              </button>
+              <button
+                onClick={async () => {
+                  if (!confirm(`Удалить поездку «${trip.name}»? Это действие необратимо.`)) return;
+                  try {
+                    await api.deleteTrip(trip.id);
+                    navigate('/trips');
+                  } catch (err) {
+                    alert('Не удалось удалить поездку');
+                    console.error(err);
+                  }
+                }}
+                className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-white border border-red-300/40 backdrop-blur-sm whitespace-nowrap"
+                title="Удалить поездку"
+              >
+                <Trash2 size={14} /> Удалить
+              </button>
+            </div>
+          </div>
           <div className="flex flex-wrap gap-4 text-white/80 text-sm">
             {trip.start_date && trip.end_date && (
               <span className="flex items-center gap-1"><Calendar size={14} />{new Date(trip.start_date).toLocaleDateString('ru-RU')} — {new Date(trip.end_date).toLocaleDateString('ru-RU')}</span>

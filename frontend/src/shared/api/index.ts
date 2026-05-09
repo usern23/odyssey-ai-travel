@@ -12,4 +12,11 @@ export type {
   TripItem,
   TokenResponse,
   StreamCallbacks,
+  PlanPlace,
+  PlanActivity,
+  PlanDay,
+  TravelPlanDto,
+  CreateManualTripPayload,
+  VersionConflictDetail,
+  AskAiResult,
 } from './types';

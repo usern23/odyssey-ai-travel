@@ -9,12 +9,11 @@ from src.components.users.infrastructure.models import User
 
 
 def _favorite_to_response(favorite) -> FavoriteResponse:
-    chat = favorite.chat
-    trip = getattr(chat, 'trip', None) if chat else None
+    trip = favorite.trip
     return FavoriteResponse(
         id=favorite.id,
-        chat_id=favorite.chat_id,
-        chat_title=chat.title if chat else 'Удалённый чат',
+        trip_id=favorite.trip_id,
+        trip_name=trip.name if trip else 'Удалённый маршрут',
         custom_name=favorite.custom_name,
         destination=trip.destination if trip else None,
         created_at=favorite.created_at)

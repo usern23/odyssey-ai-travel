@@ -1,5 +1,5 @@
-from typing import Any, Dict
-from pydantic import BaseModel, Field, field_validator
+from typing import Any, Dict, Optional
+from pydantic import BaseModel, Field, field_validator, model_validator
 from src.components.users.infrastructure.models import (
     ActivityLevel, BudgetLevel,
     DEFAULT_CATEGORY_PREFERENCES, DEFAULT_LANDSCAPE_PREFERENCES,
@@ -26,6 +26,9 @@ class UserProfileCreateRequest(BaseModel):
     start_hour: int = Field(
         default=10, ge=7, le=12,
         description='Начало активного дня (7..12)')
+    end_hour: Optional[int] = Field(
+        default=None, ge=14, le=24,
+        description='Конец активного дня (14..24); NULL — вычисляется из activity_level')
     meal_count_per_day: int = Field(
         default=2, ge=1, le=3,
         description='Количество приёмов пищи в день (1..3)')
@@ -73,3 +76,9 @@ class UserProfileCreateRequest(BaseModel):
             if not isinstance(val, (int, float)) or val < 0 or val > 10:
                 raise ValueError(f'Значение для {key} должно быть от 0 до 10, получено: {val}')
         return {k: int(v) for k, v in v.items()}
+
+    @model_validator(mode='after')
+    def check_end_after_start(self) -> 'UserProfileCreateRequest':
+        if self.end_hour is not None and self.end_hour - self.start_hour < 4:
+            raise ValueError('end_hour должен быть минимум на 4 часа позже start_hour')
+        return self

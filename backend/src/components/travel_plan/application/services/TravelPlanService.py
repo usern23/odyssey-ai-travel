@@ -129,6 +129,7 @@ class TravelPlanService:
             user_preferences: Optional[Dict[str, float]] = None,
             min_places_per_day: Optional[int] = None,
             start_hour: Optional[int] = None,
+            end_hour: Optional[int] = None,
             meal_count_per_day: int = 2,
             food_preferences: Optional[Dict[str, bool]] = None,
             category_modifiers: Optional[Dict[str, float]] = None,
@@ -157,17 +158,28 @@ class TravelPlanService:
                 pass
 
         # Кап бюджета времени: solver не может работать за пределами
-        # активного окна дня [start_time .. DAY_WINDOW_END]. Если профиль
-        # просит 14 ч, а реально влезает 10 ч — берём минимум.
+        # активного окна дня [start_time .. effective_end_time]. Если
+        # профиль просит 14 ч, а реально влезает 10 ч — берём минимум.
+        # ``end_hour`` берётся из плана/поездки (ручной билдер, профиль),
+        # иначе — стандартный конец дня (22:00).
+        try:
+            end_h_int = int(end_hour) if end_hour is not None else DAY_WINDOW_END.hour
+        except Exception:
+            end_h_int = DAY_WINDOW_END.hour
+        end_h_int = max(start_time.hour + 1, min(24, end_h_int))
+        effective_end_time = (
+            time(end_h_int, 0) if end_h_int < 24 else time(23, 59)
+        )
         max_window_hours = max(
-            1.0, float(DAY_WINDOW_END.hour - start_time.hour),
+            1.0, float(end_h_int - start_time.hour),
         )
         effective_hours_per_day = min(hours_per_day, max_window_hours)
         if effective_hours_per_day != hours_per_day:
             logger.info(
                 'hours_per_day capped: %.1f → %.1f (window %s–%s)',
                 hours_per_day, effective_hours_per_day,
-                start_time.strftime('%H:%M'), DAY_WINDOW_END.strftime('%H:%M'),
+                start_time.strftime('%H:%M'),
+                effective_end_time.strftime('%H:%M'),
             )
             plan_notes.append({
                 'type': 'pace_window_capped',
@@ -175,7 +187,7 @@ class TravelPlanService:
                 'message': (
                     f'Дневное окно сокращено с {hours_per_day:.0f} до '
                     f'{effective_hours_per_day:.0f} часов (ограничение активного окна '
-                    f'{start_time.strftime("%H:%M")}–{DAY_WINDOW_END.strftime("%H:%M")}).'
+                    f'{start_time.strftime("%H:%M")}–{effective_end_time.strftime("%H:%M")}).'
                 ),
                 'data': {
                     'requested': hours_per_day,
@@ -190,7 +202,7 @@ class TravelPlanService:
             min_places_per_day = compute_points_per_day(
                 pace=pace,
                 start_time=start_time,
-                end_time=DAY_WINDOW_END,
+                end_time=effective_end_time,
                 meal_count=meal_count_per_day,
             )
             logger.info(
@@ -198,7 +210,7 @@ class TravelPlanService:
                 'window=%s–%s, meals=%d)',
                 min_places_per_day, pace or DEFAULT_PACE,
                 start_time.strftime('%H:%M'),
-                DAY_WINDOW_END.strftime('%H:%M'),
+                effective_end_time.strftime('%H:%M'),
                 meal_count_per_day,
             )
 
@@ -276,7 +288,8 @@ class TravelPlanService:
             distance_matrix=selected_matrix,
             all_points=selected_all_points,
             hotel=hotel,
-            return_skipped=True)
+            return_skipped=True,
+            end_time=effective_end_time)
 
         # Если какой-то день не влез по часам — пробуем перенести
         # отброшенные места в соседние дни с запасом по времени.
@@ -290,6 +303,7 @@ class TravelPlanService:
                 start_time=start_time,
                 all_points_full=all_points,
                 distance_matrix_full=distance_matrix,
+                end_time=effective_end_time,
             )
 
         try:
@@ -306,6 +320,7 @@ class TravelPlanService:
             food_preferences=dict(food_preferences) if food_preferences else None,
             hours_per_day=float(effective_hours_per_day),
             start_hour=int(start_hour if start_hour is not None else start_time.hour),
+            end_hour=int(end_h_int),
             meal_count_per_day=int(meal_count_per_day),
         )
 
@@ -662,6 +677,7 @@ class TravelPlanService:
         start_time: time,
         all_points_full: List[Tuple[float, float]],
         distance_matrix_full: List[List[float]],
+        end_time: Optional[time] = None,
     ) -> List[DayPlan]:
         """Пытается пересобрать дни с учётом мест, не влезших по часам.
 
@@ -684,14 +700,15 @@ class TravelPlanService:
                     open_t, close_t = resolve_opening_window(
                         place.opening_hours, place.category.value,
                     )
+                    active_end = end_time if end_time is not None else DAY_WINDOW_END
                     used_min = plan.total_travel_time_min + plan.total_visit_time_min
-                    spare_min = int((DAY_WINDOW_END.hour - DAY_WINDOW_START.hour) * 60 - used_min)
+                    spare_min = int((active_end.hour - DAY_WINDOW_START.hour) * 60 - used_min)
                     # Грубая эвристика: если места не меньше visit+60min на travel.
                     needed = (place.visit_duration_min or 60) + 60
                     if spare_min < needed:
                         continue
                     # opening hours должны пересекаться с рабочим окном.
-                    if close_t <= DAY_WINDOW_START or open_t >= DAY_WINDOW_END:
+                    if close_t <= DAY_WINDOW_START or open_t >= active_end:
                         continue
                     if spare_min > best_spare_min:
                         best_spare_min = spare_min
@@ -720,6 +737,7 @@ class TravelPlanService:
             all_points=selected_all_points,
             hotel=hotel,
             return_skipped=False,
+            end_time=end_time,
         )
         return rebuilt
 
@@ -994,7 +1012,8 @@ class TravelPlanService:
                         all_points: List[Tuple[float,
                                                float]],
                         hotel: Place,
-                        return_skipped: bool = False) -> Any:
+                        return_skipped: bool = False,
+                        end_time: Optional[time] = None) -> Any:
         day_plans = []
         skipped_by_day: Dict[int, List[Place]] = {}
         place_to_idx = {(hotel.lat, hotel.lon): 0}
@@ -1007,14 +1026,15 @@ class TravelPlanService:
         # Допускаем ранний старт дня, если пользователь явно указал
         # start_time < DAY_WINDOW_START (например, 07:00 для «ранней пташки»).
         effective_start = start_time
-        # Активное окно дня: от пользовательского start_time до 22:00.
+        # Активное окно дня: от пользовательского start_time до end_time (или 22:00).
         # Для opening-hours-резолвера это нижняя граница клампа.
         active_day_start = min(effective_start, DAY_WINDOW_START)
+        active_day_end = end_time if end_time is not None else DAY_WINDOW_END
         for day_num, day_places in enumerate(optimized_days, 1):
             current_date = start_date + timedelta(days=day_num - 1)
             activities: List[Activity] = []
             current_time = datetime.combine(current_date, effective_start)
-            day_end_dt = datetime.combine(current_date, DAY_WINDOW_END)
+            day_end_dt = datetime.combine(current_date, active_day_end)
             prev_coords = (hotel.lat, hotel.lon)
             total_distance = 0.0
             total_travel_time = 0
@@ -1030,7 +1050,7 @@ class TravelPlanService:
                 arrival_dt = current_time + timedelta(minutes=travel_time_min)
                 open_t, close_t = resolve_opening_window(
                     place.opening_hours, place.category.value,
-                    day_start=active_day_start, day_end=DAY_WINDOW_END,
+                    day_start=active_day_start, day_end=active_day_end,
                 )
                 earliest_open_dt = datetime.combine(current_date, open_t)
                 latest_close_dt = datetime.combine(current_date, close_t)
@@ -1218,10 +1238,18 @@ class TravelPlanService:
             logger.info('replan_day: all candidates closed at %s', current_datetime)
             return plan
 
-        # Compute remaining time budget for the day. We use DAY_WINDOW_END as
-        # the latest reasonable stop time; if current_datetime is already past
-        # that, there's nothing to replan.
-        day_end = datetime.combine(target_day.date, DAY_WINDOW_END)
+        # Compute remaining time budget for the day. We honour the user's
+        # configured end-of-day (``plan.end_hour``) rather than a hardcoded
+        # default — that's the boundary the original plan was built against.
+        try:
+            plan_end_hour = int(getattr(plan, 'end_hour', None) or DAY_WINDOW_END.hour)
+        except Exception:
+            plan_end_hour = DAY_WINDOW_END.hour
+        plan_end_hour = max(1, min(24, plan_end_hour))
+        active_end = (
+            time(plan_end_hour, 0) if plan_end_hour < 24 else time(23, 59)
+        )
+        day_end = datetime.combine(target_day.date, active_end)
         if current_datetime.tzinfo is not None and day_end.tzinfo is None:
             day_end = day_end.replace(tzinfo=current_datetime.tzinfo)
         remaining_seconds = (day_end - current_datetime).total_seconds()
@@ -1333,6 +1361,7 @@ class TravelPlanService:
             meal_count_per_day=replan_meal_count,
             min_places_per_day=replan_target,
             start_hour=start_time.hour,
+            end_hour=plan_end_hour,
             category_modifiers=category_modifiers,
         )
         if not one_day.days:

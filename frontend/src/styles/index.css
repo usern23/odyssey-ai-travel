@@ -1,3 +1,25 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+
+/* ── Compact range-picker (used inside narrow modals) ───────────── */
+.odyssey-rdp-compact {
+  --rdp-cell-size: 34px;
+  --rdp-caption-font-size: 14px;
+  margin: 0;
+}
+.odyssey-rdp-compact .rdp-months {
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 12px;
+}
+.odyssey-rdp-compact .rdp-month {
+  margin: 0;
+}
+.odyssey-rdp-compact .rdp-table {
+  max-width: 100%;
+}
+.odyssey-rdp-compact .rdp-day,
+.odyssey-rdp-compact .rdp-head_cell {
+  font-size: 12px;
+}

@@ -8,7 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.infrastructure.db.base import Base
 
 if TYPE_CHECKING:
-    from src.components.favorites.infrastructure.models.FavoriteModel import Favorite
     from src.components.trips.infrastructure.models import Trip
     from src.components.users.infrastructure.models import User
 
@@ -51,8 +50,6 @@ class Chat(Base):
     trip: Mapped[Optional['Trip']] = relationship(back_populates='chats')
     messages: Mapped[List['ChatMessage']] = relationship(
         back_populates='chat', cascade='all, delete-orphan', order_by='ChatMessage.created_at')
-    favorites: Mapped[List['Favorite']] = relationship(
-        back_populates='chat', cascade='all, delete-orphan')
 
     def __repr__(self) -> str:
         return f"<Chat(id={self.id}, title='{self.title}', trip_id={self.trip_id})>"

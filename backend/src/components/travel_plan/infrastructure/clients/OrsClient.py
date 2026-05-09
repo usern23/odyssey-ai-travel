@@ -65,6 +65,70 @@ class ORSClient:
             logger.error(f'Geocoding error: {e}')
             raise ORSError(f'Geocoding failed: {e}')
 
+    async def search_places(
+        self,
+        query: str,
+        focus_lat: Optional[float] = None,
+        focus_lon: Optional[float] = None,
+        limit: int = 10,
+        radius_km: Optional[float] = 50.0,
+    ) -> List[Dict[str, Any]]:
+        """Free-text search returning multiple ranked results.
+
+        Uses ORS Pelias ``/geocode/search`` endpoint.
+
+        - ``focus.point.*``  — *ranks* nearby results higher.
+        - ``boundary.circle.*`` — *filters* hard to a circle around the
+          focus point (radius in km, max 1000). This prevents famous
+          global landmarks (e.g. London's Royal Albert Hall) from
+          drowning out local matches in Manchester etc.
+
+        Each result is a dict with keys: ``name``, ``lat``, ``lon``,
+        ``address``, ``layer`` (e.g. venue/address/locality), ``country``.
+        """
+        client = await self._get_client()
+        params: Dict[str, Any] = {
+            'api_key': self.api_key,
+            'text': query,
+            'size': max(1, min(int(limit), 20)),
+        }
+        if focus_lat is not None and focus_lon is not None:
+            params['focus.point.lat'] = focus_lat
+            params['focus.point.lon'] = focus_lon
+            if radius_km and radius_km > 0:
+                params['boundary.circle.lat'] = focus_lat
+                params['boundary.circle.lon'] = focus_lon
+                params['boundary.circle.radius'] = float(radius_km)
+        try:
+            response = await client.get('/geocode/search', params=params)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f'Place search error: {e.response.text}')
+            raise ORSError(f'Place search failed: {e.response.status_code}')
+        except Exception as e:
+            logger.error(f'Place search error: {e}')
+            raise ORSError(f'Place search failed: {e}')
+
+        results: List[Dict[str, Any]] = []
+        for feat in data.get('features', []):
+            geom = feat.get('geometry') or {}
+            coords = geom.get('coordinates') or []
+            if len(coords) < 2:
+                continue
+            props = feat.get('properties') or {}
+            results.append({
+                'name': props.get('name') or props.get('label') or query,
+                'lat': coords[1],
+                'lon': coords[0],
+                'address': props.get('label'),
+                'layer': props.get('layer'),
+                'country': props.get('country'),
+                'region': props.get('region'),
+                'locality': props.get('locality'),
+            })
+        return results
+
     async def get_matrix(self,
                          points: List[Tuple[float,
                                             float]],

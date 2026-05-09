@@ -57,14 +57,14 @@ class MessageSavedEvent(Event):
 @dataclass
 class AddToFavoritesEvent(Event):
     user_id: int = 0
-    chat_id: int = 0
+    trip_id: int = 0
     custom_name: Optional[str] = None
 
 
 @dataclass
 class RemoveFromFavoritesEvent(Event):
     user_id: int = 0
-    chat_id: int = 0
+    trip_id: int = 0
 
 
 @dataclass

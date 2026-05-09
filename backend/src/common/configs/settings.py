@@ -89,6 +89,13 @@ class Settings(BaseSettings):
     rabbitmq_url: str = 'amqp://guest:guest@localhost:5672/'
     yandex_client_id: Optional[str] = None
     yandex_client_secret: Optional[str] = None
+    # Manual Trip Builder feature flag. When False, the new manual-edit
+    # endpoints are disabled (return 404) so the agent-only path keeps
+    # working as before. Flip to True (env MANUAL_BUILDER_ENABLED=1) once
+    # the feature is ready for users.
+    manual_builder_enabled: bool = Field(
+        default=False, validation_alias=AliasChoices(
+            'MANUAL_BUILDER_ENABLED', 'MANUAL_TRIP_BUILDER_ENABLED'))
 
     @field_validator('cors_origins', mode='before')
     @classmethod

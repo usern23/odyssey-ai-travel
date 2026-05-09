@@ -9,9 +9,9 @@ class UpdateFavoriteCommand(IUpdateFavoriteCommand):
     def __init__(self, db_session: AsyncSession):
         self.db_session = db_session
 
-    async def __call__(self, user_id: int, chat_id: int, custom_name: str) -> bool:
+    async def __call__(self, user_id: int, trip_id: int, custom_name: str) -> bool:
         result = await self.db_session.execute(
-            select(Favorite).where(Favorite.user_id == user_id, Favorite.chat_id == chat_id))
+            select(Favorite).where(Favorite.user_id == user_id, Favorite.trip_id == trip_id))
         favorite = result.scalar_one_or_none()
         if not favorite:
             return False

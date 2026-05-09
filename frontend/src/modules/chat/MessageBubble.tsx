@@ -1,7 +1,7 @@
 import { motion } from 'motion/react';
-import { Sparkles, User, Map } from 'lucide-react';
+import { Sparkles, User, Map, Play } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../shared/api/client';
 
 interface MessageBubbleProps {
@@ -93,6 +93,10 @@ function MapIframe({ chatId, forceRefresh }: { chatId: number; forceRefresh?: bo
 }
 
 export function MessageBubble({ type, content, showMap, chatId }: MessageBubbleProps) {
+  const youtubeVideos = useMemo(
+    () => (type === 'ai' ? extractYouTubeVideos(content) : []),
+    [content, type],
+  );
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -123,8 +127,113 @@ export function MessageBubble({ type, content, showMap, chatId }: MessageBubbleP
         >
           {type === 'ai' ? <ReactMarkdown>{content}</ReactMarkdown> : content}
         </div>
+        {type === 'ai' && youtubeVideos.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+            {youtubeVideos.map((v) => (
+              <YouTubePreview key={v.id} videoId={v.id} title={v.title} />
+            ))}
+          </div>
+        )}
         {type === 'ai' && showMap && chatId && <RouteMap chatId={chatId} />}
       </div>
     </motion.div>
+  );
+}
+
+// ====================================================================
+// YouTube preview helpers
+// ====================================================================
+
+interface YTVideo { id: string; title?: string }
+
+/**
+ * Extract unique YouTube videos from markdown / plain text. Recognises:
+ *   - youtu.be/<ID>
+ *   - youtube.com/watch?v=<ID>
+ *   - youtube.com/shorts/<ID>
+ *   - youtube.com/embed/<ID>
+ * Captures the surrounding [title](url) text when the URL is in a markdown
+ * link, so the preview card can show a meaningful caption.
+ */
+function extractYouTubeVideos(text: string): YTVideo[] {
+  const seen = new Set<string>();
+  const out: YTVideo[] = [];
+  // 1) Markdown links: [title](url) where url is YouTube.
+  const mdRe = /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = mdRe.exec(text)) !== null) {
+    const id = parseYouTubeId(m[2]);
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      out.push({ id, title: m[1] });
+    }
+  }
+  // 2) Bare URLs anywhere in the message.
+  const bareRe = /(https?:\/\/(?:www\.)?(?:youtube\.com|youtu\.be)\/[\w\-?=&\/.]+)/g;
+  while ((m = bareRe.exec(text)) !== null) {
+    const id = parseYouTubeId(m[1]);
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      out.push({ id });
+    }
+  }
+  return out;
+}
+
+function parseYouTubeId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    if (host === 'youtu.be') {
+      const id = u.pathname.replace(/^\//, '').split('/')[0];
+      return /^[\w-]{6,}$/.test(id) ? id : null;
+    }
+    if (host.endsWith('youtube.com')) {
+      const v = u.searchParams.get('v');
+      if (v && /^[\w-]{6,}$/.test(v)) return v;
+      const parts = u.pathname.split('/').filter(Boolean);
+      const idx = parts.findIndex((p) => p === 'shorts' || p === 'embed' || p === 'live');
+      if (idx !== -1 && parts[idx + 1]) {
+        const id = parts[idx + 1];
+        return /^[\w-]{6,}$/.test(id) ? id : null;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+function YouTubePreview({ videoId, title }: { videoId: string; title?: string }) {
+  const url = `https://www.youtube.com/watch?v=${videoId}`;
+  // hqdefault is reliably available for every public video.
+  const thumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group relative block rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 hover:border-blue-400 dark:hover:border-blue-500 transition-colors no-underline"
+      title={title || 'Open on YouTube'}
+    >
+      <div className="relative aspect-video bg-black">
+        <img
+          src={thumb}
+          alt={title || 'YouTube video'}
+          loading="lazy"
+          className="absolute inset-0 w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+        />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-14 h-14 rounded-full bg-red-600/95 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+            <Play size={24} fill="white" className="ml-1" />
+          </div>
+        </div>
+      </div>
+      {title && (
+        <div className="px-3 py-2 text-xs text-slate-700 dark:text-slate-200 line-clamp-2">
+          {title}
+        </div>
+      )}
+    </a>
   );
 }

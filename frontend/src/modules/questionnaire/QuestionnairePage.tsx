@@ -122,6 +122,7 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
     vegetarian: false, halal: false, local_cuisine: true, street_food: false,
   });
   const [startHour, setStartHour] = useState<number>(10);
+  const [endHour, setEndHour] = useState<number>(22);
   const [mealCount, setMealCount] = useState<number>(2);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(isEdit);
@@ -142,6 +143,7 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
       setLandscape(p.landscape_preferences);
       setFood(p.food_preferences);
       if (typeof p.start_hour === 'number') setStartHour(p.start_hour);
+      if (typeof p.end_hour === 'number') setEndHour(p.end_hour);
       if (typeof p.meal_count_per_day === 'number') setMealCount(p.meal_count_per_day);
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -157,6 +159,7 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
     landscape_preferences: landscape,
     food_preferences: food,
     start_hour: startHour,
+    end_hour: endHour,
     meal_count_per_day: mealCount,
   });
 
@@ -376,6 +379,30 @@ export default function QuestionnairePage({ editMode = false }: QuestionnairePag
                     <span>07:00</span>
                     <span>12:00</span>
                   </div>
+                </div>
+                <div>
+                  <div className="flex items-baseline justify-between mb-2">
+                    <span className="text-sm font-medium">🌙 Конец дня</span>
+                    <span className="text-lg font-mono font-semibold text-blue-600">
+                      {String(endHour).padStart(2, '0')}:00
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={Math.max(14, startHour + 4)}
+                    max={24}
+                    step={1}
+                    value={Math.max(endHour, Math.max(14, startHour + 4))}
+                    onChange={(e) => setEndHour(Number(e.target.value))}
+                    className="w-full accent-blue-600"
+                  />
+                  <div className="flex justify-between text-xs text-slate-400 mt-1">
+                    <span>{String(Math.max(14, startHour + 4)).padStart(2, '0')}:00</span>
+                    <span>24:00</span>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-2">
+                    Чем позже заканчивается день — тем больше мест помещается в маршрут.
+                  </p>
                 </div>
                 <div>
                   <div className="flex items-baseline justify-between mb-3">

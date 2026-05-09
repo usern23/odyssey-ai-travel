@@ -90,18 +90,54 @@ class AgentHostService:
         trip_info = None
         if trip:
             generated_plan = getattr(trip, 'generated_plan', None) or {}
-            days = generated_plan.get('days') or []
+            # Manual builder wraps the actual plan into ``plan_data``,
+            # whereas chat-only trips store the unwrapped plan dict.
+            # Normalise both formats so the rest of the context loader
+            # — and the agent reading it — can work with a single shape.
+            if isinstance(generated_plan, dict) \
+                    and isinstance(generated_plan.get('plan_data'), dict):
+                inner_plan = generated_plan['plan_data']
+                plan_source = (
+                    generated_plan.get('source')
+                    or inner_plan.get('source'))
+            else:
+                inner_plan = generated_plan
+                plan_source = inner_plan.get('source') if isinstance(inner_plan, dict) else None
+            days = inner_plan.get('days') or []
+            hotel_obj = inner_plan.get('hotel') or {}
+            # ``has_plan`` should reflect a *real* plan (with at least
+            # the hotel set or non-empty days), not just the presence
+            # of an empty wrapper.
+            has_plan = bool(hotel_obj or days)
+            # Explicit duration in days so the LLM doesn't have to do
+            # date arithmetic. ``+1`` because both endpoints are inclusive.
+            trip_duration_days: Optional[int] = None
+            if trip.start_date and trip.end_date:
+                try:
+                    trip_duration_days = (trip.end_date - trip.start_date).days + 1
+                except Exception:
+                    trip_duration_days = None
             trip_info = {
                 'id': trip.id,
                 'destination': trip.destination,
                 'origin': trip.origin,
                 'start_date': trip.start_date.isoformat() if trip.start_date else None,
                 'end_date': trip.end_date.isoformat() if trip.end_date else None,
+                'duration_days': trip_duration_days,
                 'budget': trip.trip_profile.get('budget') if trip.trip_profile else None,
-                'has_plan': bool(generated_plan),
+                'has_plan': has_plan,
                 'plan_days': len(days),
-                'plan_total_places': generated_plan.get('total_places'),
-                'plan_hotel_name': (generated_plan.get('hotel') or {}).get('name'),
+                'plan_total_places': inner_plan.get('total_places'),
+                'plan_hotel_name': hotel_obj.get('name'),
+                # Surface hotel coordinates and address so the agent can
+                # plan around the user-specified starting point without
+                # re-geocoding the destination city.
+                'plan_hotel_lat': hotel_obj.get('lat'),
+                'plan_hotel_lon': hotel_obj.get('lon'),
+                'plan_hotel_address': hotel_obj.get('address'),
+                'plan_start_hour': inner_plan.get('start_hour'),
+                'plan_end_hour': inner_plan.get('end_hour'),
+                'plan_source': plan_source,
             }
         return {
             'user_id': user_id,

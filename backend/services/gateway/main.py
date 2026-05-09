@@ -23,6 +23,7 @@ from src.components.favorites.application.FavoritesApplication import FavoritesA
 from src.components.favorites.web.FavoritesWebRouter import FavoritesWebRouter
 from src.components.agent.application.AgentApplication import AgentApplication
 from src.components.agent.web.AgentWebRouter import AgentWebRouter
+from src.components.travel_plan.web.ManualBuilderWebRouter import ManualBuilderWebRouter
 
 
 @asynccontextmanager
@@ -58,6 +59,9 @@ def create_app() -> FastAPI:
     ChatsWebRouter()(app, prefix=api_prefix)
     FavoritesWebRouter()(app, prefix=api_prefix)
     AgentWebRouter()(app, prefix=api_prefix)
+
+    if settings.manual_builder_enabled:
+        ManualBuilderWebRouter()(app, prefix=api_prefix)
 
     @app.get('/', tags=['system'])
     async def root() -> dict[str, str]:

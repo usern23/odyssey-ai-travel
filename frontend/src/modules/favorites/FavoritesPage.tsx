@@ -34,17 +34,17 @@ export default function FavoritesPage() {
     }
   };
 
-  const handleRemove = async (chatId: number) => {
+  const handleRemove = async (tripId: number) => {
     try {
-      await api.removeFavorite(chatId);
-      setFavorites((prev) => prev.filter((f) => f.chat_id !== chatId));
+      await api.removeFavorite(tripId);
+      setFavorites((prev) => prev.filter((f) => f.trip_id !== tripId));
     } catch { /* ignore */ }
   };
 
   const filtered = searchQuery
     ? favorites.filter(
         (f) =>
-          f.chat_title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          f.trip_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           f.destination?.toLowerCase().includes(searchQuery.toLowerCase()) ||
           f.custom_name?.toLowerCase().includes(searchQuery.toLowerCase()),
       )

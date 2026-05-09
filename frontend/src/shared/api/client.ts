@@ -9,15 +9,20 @@ import type {
   FavoriteItem,
   TripItem,
   StreamCallbacks,
+  PlanPlace,
+  CreateManualTripPayload,
+  AskAiResult,
 } from './types';
 
 const API_BASE = '/api/v1';
 
 export class ApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  detail: unknown;
+  constructor(status: number, message: string, detail?: unknown) {
     super(message);
     this.status = status;
+    this.detail = detail ?? message;
   }
 }
 
@@ -71,7 +76,13 @@ class ApiClient {
 
     if (!res.ok) {
       const errData = await res.json().catch(() => ({}));
-      throw new ApiError(res.status, errData.detail || res.statusText);
+      const rawDetail = errData.detail;
+      const message = typeof rawDetail === 'string'
+        ? rawDetail
+        : (rawDetail && typeof rawDetail === 'object' && 'message' in rawDetail
+            ? String((rawDetail as Record<string, unknown>).message)
+            : res.statusText);
+      throw new ApiError(res.status, message, rawDetail);
     }
 
     return res.json();
@@ -274,22 +285,22 @@ class ApiClient {
     return this.request<FavoriteListResponse>('GET', '/favorites');
   }
 
-  async addFavorite(chatId: number, customName?: string) {
+  async addFavorite(tripId: number, customName?: string) {
     return this.request<FavoriteItem>(
       'POST', '/favorites',
-      { chat_id: chatId, custom_name: customName },
+      { trip_id: tripId, custom_name: customName },
     );
   }
 
-  async updateFavorite(chatId: number, customName: string) {
+  async updateFavorite(tripId: number, customName: string) {
     return this.request<FavoriteItem>(
-      'PATCH', `/favorites/${chatId}`,
+      'PATCH', `/favorites/${tripId}`,
       { custom_name: customName },
     );
   }
 
-  async removeFavorite(chatId: number) {
-    return this.request<void>('DELETE', `/favorites/${chatId}`);
+  async removeFavorite(tripId: number) {
+    return this.request<void>('DELETE', `/favorites/${tripId}`);
   }
 
   // ── Trips ─────────────────────────────────────────────
@@ -299,6 +310,10 @@ class ApiClient {
 
   async getTrip(tripId: number) {
     return this.request<TripItem>('GET', `/trips/${tripId}`);
+  }
+
+  async deleteTrip(tripId: number) {
+    return this.request<void>('DELETE', `/trips/${tripId}`);
   }
 
   async replanTripDay(
@@ -311,6 +326,197 @@ class ApiClient {
       `/trips/${tripId}/days/${dayNumber}/replan`,
       body ?? {},
     );
+  }
+
+  // ── Manual Trip Builder ──────────────────────────────
+  async createManualTrip(payload: CreateManualTripPayload) {
+    return this.request<TripItem>('POST', '/trips/manual', payload);
+  }
+
+  async addPlaceToDay(
+    tripId: number,
+    dayNumber: number,
+    body: {
+      place: PlanPlace;
+      index?: number | null;
+      is_locked?: boolean;
+      note?: string | null;
+      actual_cost?: number | null;
+      expected_version?: number | null;
+    },
+  ) {
+    return this.request<TripItem>(
+      'POST', `/trips/${tripId}/days/${dayNumber}/places`, body,
+    );
+  }
+
+  async updateActivity(
+    tripId: number,
+    dayNumber: number,
+    activityIndex: number,
+    body: {
+      note?: string | null;
+      actual_cost?: number | null;
+      is_locked?: boolean | null;
+      visit_duration_min?: number | null;
+      expected_version?: number | null;
+    },
+  ) {
+    return this.request<TripItem>(
+      'PATCH',
+      `/trips/${tripId}/days/${dayNumber}/places/${activityIndex}`,
+      body,
+    );
+  }
+
+  async removePlaceFromDay(
+    tripId: number,
+    dayNumber: number,
+    activityIndex: number,
+    expectedVersion?: number | null,
+  ) {
+    const qs = expectedVersion != null
+      ? `?expected_version=${expectedVersion}` : '';
+    return this.request<TripItem>(
+      'DELETE',
+      `/trips/${tripId}/days/${dayNumber}/places/${activityIndex}${qs}`,
+    );
+  }
+
+  async reorderDay(
+    tripId: number,
+    dayNumber: number,
+    body: { new_indices: number[]; expected_version?: number | null },
+  ) {
+    return this.request<TripItem>(
+      'POST', `/trips/${tripId}/days/${dayNumber}/reorder`, body,
+    );
+  }
+
+  async movePlace(
+    tripId: number,
+    body: {
+      from_day: number;
+      to_day: number;
+      activity_index: number;
+      target_index?: number | null;
+      expected_version?: number | null;
+    },
+  ) {
+    return this.request<TripItem>(
+      'POST', `/trips/${tripId}/places/move`, body,
+    );
+  }
+
+  async addToWishlist(
+    tripId: number,
+    body: { place: PlanPlace; expected_version?: number | null },
+  ) {
+    return this.request<TripItem>('POST', `/trips/${tripId}/wishlist`, body);
+  }
+
+  async removeFromWishlist(
+    tripId: number,
+    wishlistIndex: number,
+    expectedVersion?: number | null,
+  ) {
+    const qs = expectedVersion != null
+      ? `?expected_version=${expectedVersion}` : '';
+    return this.request<TripItem>(
+      'DELETE', `/trips/${tripId}/wishlist/${wishlistIndex}${qs}`,
+    );
+  }
+
+  async promoteFromWishlist(
+    tripId: number,
+    wishlistIndex: number,
+    body: {
+      day_number: number;
+      target_index?: number | null;
+      expected_version?: number | null;
+    },
+  ) {
+    return this.request<TripItem>(
+      'POST', `/trips/${tripId}/wishlist/${wishlistIndex}/promote`, body,
+    );
+  }
+
+  async updateBudget(
+    tripId: number,
+    body: {
+      total?: number | null;
+      by_category?: Record<string, number> | null;
+      currency?: string | null;
+      lodging_total?: number | null;
+      transport_total?: number | null;
+      expected_version?: number | null;
+    },
+  ) {
+    return this.request<TripItem>('PATCH', `/trips/${tripId}/budget`, body);
+  }
+
+  async optimizeDay(
+    tripId: number,
+    dayNumber: number,
+    body?: { expected_version?: number | null },
+  ) {
+    return this.request<TripItem>(
+      'POST', `/trips/${tripId}/days/${dayNumber}/optimize`, body ?? {},
+    );
+  }
+
+  async optimizeDayPreview(
+    tripId: number,
+    dayNumber: number,
+    body?: { expected_version?: number | null },
+  ) {
+    return this.request<{
+      before_count: number;
+      after_count: number;
+      added: string[];
+      removed: string[];
+      kept: string[];
+      total_distance_km_before: number;
+      total_distance_km_after: number;
+      total_travel_time_min_before: number;
+      total_travel_time_min_after: number;
+    }>(
+      'POST', `/trips/${tripId}/days/${dayNumber}/optimize/preview`, body ?? {},
+    );
+  }
+
+  async updateHotel(
+    tripId: number,
+    body: { hotel: PlanPlace | null; expected_version?: number | null },
+  ) {
+    return this.request<TripItem>('PATCH', `/trips/${tripId}/hotel`, body);
+  }
+
+  async askAiForTrip(tripId: number, initialMessage?: string) {
+    return this.request<AskAiResult>(
+      'POST', `/trips/${tripId}/ask-ai`,
+      { initial_message: initialMessage ?? null },
+    );
+  }
+
+  async searchPlaces(body: {
+    query: string;
+    near_lat?: number | null;
+    near_lon?: number | null;
+    radius_km?: number | null;
+    limit?: number;
+  }) {
+    return this.request<{
+      results: Array<{
+        name: string;
+        lat: number;
+        lon: number;
+        category: string;
+        address?: string | null;
+        source?: string | null;
+      }>;
+      count: number;
+    }>('POST', '/places/search', body);
   }
 }
 

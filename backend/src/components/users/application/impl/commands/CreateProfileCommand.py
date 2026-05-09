@@ -18,6 +18,7 @@ class CreateProfileCommand(ICreateProfileCommand):
             landscape_preferences=payload.landscape_preferences,
             food_preferences=payload.food_preferences,
             start_hour=payload.start_hour,
+            end_hour=payload.end_hour,
             meal_count_per_day=payload.meal_count_per_day)
         self.db_session.add(profile)
         await self.db_session.commit()

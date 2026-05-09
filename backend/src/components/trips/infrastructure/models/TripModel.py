@@ -11,6 +11,7 @@ from src.infrastructure.db.base import Base
 
 if TYPE_CHECKING:
     from src.components.chats.infrastructure.models.ChatModel import Chat
+    from src.components.favorites.infrastructure.models.FavoriteModel import Favorite
     from src.components.users.infrastructure.models.UserModel import User
 
 
@@ -34,6 +35,8 @@ class Trip(Base):
 
     user: Mapped['User'] = relationship('User', back_populates='trips')
     chats: Mapped[List['Chat']] = relationship('Chat', back_populates='trip')
+    favorites: Mapped[List['Favorite']] = relationship(
+        'Favorite', back_populates='trip', cascade='all, delete-orphan')
 
     def __repr__(self) -> str:
         return f"<Trip(id={self.id}, destination='{self.destination}', user_id={self.user_id})>"

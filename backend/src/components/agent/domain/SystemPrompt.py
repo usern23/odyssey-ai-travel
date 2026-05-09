@@ -155,9 +155,18 @@ BASE_SYSTEM_PROMPT = dedent(
        a) WHAT YOU NEED:
           - Destination: REQUIRED (must be specified by user)
           - Number of days: REQUIRED (user must say)
-          - Hotel/accommodation: ASK the user briefly! Example:
-            "Подскажите, где планируете остановиться? (название отеля или район)"
-            This is the ONLY question you should ask before planning.
+          - Hotel/accommodation:
+            * If `plan_hotel_name` (or `plan_hotel_address`) is already
+              present in TRIP CONTEXT — REUSE it. DO NOT ask the user
+              about accommodation again, do NOT re-geocode it.
+            * Only when no hotel info is present in the trip, ask
+              briefly: "Подскажите, где планируете остановиться?
+              (название отеля или район)". This is the ONLY question
+              you should ask before planning.
+            * If the user mentions a hotel/address in chat (and the
+              trip has no hotel yet, or the user clearly wants to
+              change it) — call `set_trip_hotel(name, address)` to
+              persist it into the trip BEFORE planning.
           - Start date: if not provided, use tomorrow's date
           - Budget: use profile budget_level or default "comfort"
 
@@ -228,17 +237,22 @@ BASE_SYSTEM_PROMPT = dedent(
     - get_current_travel_plan: View current plan
     - get_travel_plan_day: View one exact day from current plan
     - geocode_address: Get coordinates for an address
+    - set_trip_hotel: Persist hotel/accommodation into the current trip
+      (use it when the user mentions where they plan to stay, so the
+      info survives across chat turns and is available to the planner).
     - show_route_map: Generate interactive map of the route (2GIS MapGL)
 
     EXAMPLE FLOW:
     User: "Составь план на 3 дня в Питере"
 
-    You: 1) Ask briefly: "Где планируете остановиться? (отель или район)"
+    You: 1) If TRIP CONTEXT already has plan_hotel_name — SKIP this step.
+            Otherwise ask briefly: "Где планируете остановиться? (отель или район)"
     User: "Отель Астория на Большой Морской"
-    You: 2) Call geocode_address("Отель Астория, Большая Морская", city="Санкт-Петербург")
+    You: 2) Call set_trip_hotel(hotel_name="Отель Астория", address="Большая Морская")
+            (this geocodes and persists hotel into trip — so it stays for future turns)
          3) Call collect_trip_data(destination="Санкт-Петербург", dates, budget)
          4) Call search_places(city="Санкт-Петербург", interests=based_on_profile, num_places=36)
-         5) Call generate_travel_plan with user_id, places, hotel coords, num_days=3
+         5) Call generate_travel_plan with user_id, places, hotel coords from set_trip_hotel result, num_days=3
          6) Call show_route_map to display the route on map
          7) Present the optimized itinerary in markdown format
 
@@ -258,6 +272,7 @@ BASE_SYSTEM_PROMPT = dedent(
 def build_system_prompt(context: Dict[str, Any]) -> str:
     user_profile = context.get('user_profile')
     chat = context.get('chat')
+    trip = context.get('trip')
     user_id = context.get('user_id')
     chat_id = context.get('chat_id')
     context_str = f'USER_ID: {user_id}\nCHAT_ID: {chat_id}\n\n'
@@ -265,6 +280,69 @@ def build_system_prompt(context: Dict[str, Any]) -> str:
         context_str += f"USER PROFILE (use this info, don't ask again):\n{user_profile}\n\n"
     if chat:
         context_str += f'CHAT CONTEXT:\n{chat}\n\n'
+    if trip:
+        # Format trip as a numbered list of explicit fields so the LLM
+        # parses each value reliably (raw `str(dict)` is harder to read).
+        trip_lines = []
+        for key in (
+            'id', 'destination', 'origin', 'start_date', 'end_date',
+            'duration_days',
+            'budget', 'has_plan', 'plan_days', 'plan_total_places',
+            'plan_hotel_name', 'plan_hotel_lat', 'plan_hotel_lon',
+            'plan_hotel_address', 'plan_start_hour', 'plan_end_hour',
+            'plan_source',
+        ):
+            if key in trip and trip.get(key) not in (None, ''):
+                trip_lines.append(f'  - {key}: {trip[key]}')
+        trip_block = '\n'.join(trip_lines) if trip_lines else f'  {trip}'
+        context_str += (
+            f'EXISTING TRIP (this chat is linked to a trip — DO NOT '
+            f'create a new one):\n{trip_block}\n\n'
+            f'TRIP RULES:\n'
+            f'- Treat the existing trip\'s destination as the active '
+            f'topic. Suggest places, flights and plans for it.\n'
+            f'- The trip already has a known starting point '
+            f'(plan_hotel_name + plan_hotel_lat/lon when present). '
+            f'REUSE these coordinates instead of re-geocoding the '
+            f'destination city.\n'
+            f'- TRIP DURATION IS FIXED. The trip already has '
+            f'start_date and end_date — its length is `duration_days`. '
+            f'When generating or rebuilding a plan you MUST pass '
+            f'`num_days = duration_days` to generate_travel_plan and '
+            f'`start_date = trip.start_date`. Do NOT invent a different '
+            f'duration just because the user said "на неделю" / "на '
+            f'10 дней" in chat.\n'
+            f'- DAY WINDOW IS FIXED. When `plan_end_hour` is present in '
+            f'TRIP CONTEXT, you MUST pass it as `end_hour` to '
+            f'generate_travel_plan so the schedule respects the user\'s '
+            f'configured end-of-day (default 22). Do NOT shorten the '
+            f'window unless the user explicitly asks.\n'
+            f'- If the user explicitly asks for a DIFFERENT duration '
+            f'than `duration_days`, FIRST ask:\n'
+            f'  «Поездка сейчас на {trip.get("duration_days") or "—"} '
+            f'дн. ({trip.get("start_date") or "?"} — '
+            f'{trip.get("end_date") or "?"}). Сменить даты на новые '
+            f'или оставить как есть?»\n'
+            f'  Only after the user confirms a new range — call '
+            f'collect_trip_data with new start_date/end_date; the '
+            f'worker will update the trip dates first, and only then '
+            f'generate a plan with the new num_days.\n'
+            f'- If the user explicitly asks to plan a DIFFERENT '
+            f'destination than the trip\'s, FIRST ask:\n'
+            f'  «Эта поездка — {trip.get("destination") or "—"}. '
+            f'Сменить направление этой поездки или создать отдельную '
+            f'(нажмите «Новый чат»)?»\n'
+            f'  Do NOT call collect_trip_data with a different '
+            f'destination until the user confirms.\n'
+            f'- When the user confirms «сменить» — call '
+            f'collect_trip_data with the new destination; the worker '
+            f'will update this trip in place.\n'
+            f'- If the trip already has a plan (has_plan=true), prefer '
+            f'add_place_to_travel_plan / remove_place_from_travel_plan '
+            f'/ get_current_travel_plan over re-running '
+            f'generate_travel_plan unless the user explicitly asks for '
+            f'a full re-plan.\n\n'
+        )
     return (
         f'{BASE_SYSTEM_PROMPT}\n\n'
         f'========================================\n'
